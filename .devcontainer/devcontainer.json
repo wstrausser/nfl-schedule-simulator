@@ -1,0 +1,14 @@
+{
+    "name": "NFL Season Simulator",
+    "image": "mcr.microsoft.com/devcontainers/rust:latest",
+    // "postStartCommand": "yes | bash ./.devcontainer/post_start_command.sh",
+    "customizations": {
+        "settings": {
+            "files.autoSave": "afterDelay",
+            "files.eol": "auto",
+            "editor.rulers": [
+                88
+            ]
+        }
+    }
+}
