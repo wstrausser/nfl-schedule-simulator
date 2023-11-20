@@ -1,5 +1,6 @@
 use dotenv::dotenv;
 use postgres::{Client, NoTls, Row};
+use rand::Rng;
 use std::collections::HashMap;
 use std::env::var;
 
@@ -25,14 +26,14 @@ impl Team {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum GameResult {
     HomeWin,
     AwayWin,
     Tie,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Game {
     pub game_id: i32,
     pub season_year: i32,
@@ -42,6 +43,7 @@ pub struct Game {
     pub home_team: Team,
     pub away_team: Team,
     pub game_result: Option<GameResult>,
+    pub is_simulated: bool,
 }
 
 impl Game {
@@ -87,14 +89,35 @@ impl Game {
             home_team,
             away_team,
             game_result,
+            is_simulated: false,
         };
 
         game
     }
+
+    pub fn simulate_if_undecided(&mut self) {
+        if self.game_result.is_none() {
+            let tie_likelihood: f64 = 0.003421;
+
+            let mut rng: rand::rngs::ThreadRng = rand::thread_rng();
+            let tie_predictor: f64 = rng.gen();
+            let win_predictor: f64 = rng.gen();
+
+            if tie_predictor <= tie_likelihood {
+                self.game_result = Some(GameResult::Tie);
+            } else if win_predictor < 0.5 {
+                self.game_result = Some(GameResult::HomeWin);
+            } else if win_predictor >= 0.5 {
+                self.game_result = Some(GameResult::AwayWin);
+            };
+
+            self.is_simulated = true;
+        }
+    }
 }
 
 #[derive(Debug)]
-pub struct SeasonResult {
+pub struct SimulationResult {
     pub playoff_seeding: HashMap<u8, Vec<Team>>,
     pub division_winners: Vec<Team>,
     pub wildcard_teams: Vec<Team>,
@@ -105,8 +128,9 @@ pub struct SeasonResult {
 pub struct Season {
     pub season_year: i32,
     pub teams: HashMap<i32, Team>,
-    pub games: HashMap<i32, Game>,
-    pub season_result: Option<SeasonResult>,
+    pub actual_games: HashMap<i32, Game>,
+    pub simulated_games: HashMap<i32, Game>,
+    pub simulation_result: Option<SimulationResult>,
 }
 
 impl Season {
@@ -114,13 +138,22 @@ impl Season {
         let mut season: Season = Season {
             season_year,
             teams: HashMap::new(),
-            games: HashMap::new(),
-            season_result: None,
+            actual_games: HashMap::new(),
+            simulated_games: HashMap::new(),
+            simulation_result: None,
         };
 
         season.load_teams();
         season.load_games();
         season
+    }
+
+    pub fn run_simulation(&mut self) {
+        self.simulated_games = self.actual_games.clone();
+        for game_item in self.simulated_games.iter_mut() {
+            let game: &mut Game = game_item.1;
+            game.simulate_if_undecided();
+        }
     }
 
     fn load_teams(&mut self) {
@@ -170,7 +203,7 @@ impl Season {
 
         for row in results {
             let game: Game = Game::new_from_db_row(row, self.teams.clone());
-            self.games.insert(game.game_id.clone(), game);
+            self.actual_games.insert(game.game_id.clone(), game);
         }
     }
 }

@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 dotenv = "0.15.0"
 postgres = "0.19.7"
+rand = "0.8.5"
