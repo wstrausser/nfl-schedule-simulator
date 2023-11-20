@@ -1,16 +1,13 @@
 use nfl_schedule_simulator::*;
-use std::collections::HashMap;
 
 fn main() {
-    let season: i32 = 2023;
-    let teams = get_season_teams(2023);
-    let games: HashMap<i32, Game> = get_season_games(season, &teams);
+    let season_year: i32 = 2023;
+    let season: Season = Season::new_from_year(season_year);
 
-    let game: &Game = games.get(&3924).unwrap();
+    let team = season.teams.get(&13).unwrap();
+    let game = season.games.get(&3797).unwrap();
 
-    let division_game: bool = {
-        game.home_team.division == game.away_team.division
-    };
+    let is_same_team = { &game.home_team == team };
 
-    println!("{:?}", division_game);
+    println!("{:?}", is_same_team);
 }
