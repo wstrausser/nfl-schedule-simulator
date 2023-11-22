@@ -144,6 +144,8 @@ pub struct TeamSimulationResults {
 pub struct Season {
     pub season_year: i32,
     pub teams: HashMap<i32, Team>,
+    pub conference_mapping: HashMap<String, Vec<i32>>,
+    pub division_mapping: HashMap<String, Vec<i32>>,
     pub actual_games: HashMap<i32, Game>,
     pub current_simulated_games: HashMap<i32, Game>,
     pub current_simulation_result: Option<SeasonSimulationResult>,
@@ -155,6 +157,8 @@ impl Season {
         let mut season: Season = Season {
             season_year,
             teams: HashMap::new(),
+            conference_mapping: HashMap::new(),
+            division_mapping: HashMap::new(),
             actual_games: HashMap::new(),
             current_simulated_games: HashMap::new(),
             current_simulation_result: None,
@@ -162,6 +166,7 @@ impl Season {
         };
 
         season.load_teams();
+        season.load_conference_division_mapping();
         season.load_games();
         season
     }
@@ -172,6 +177,11 @@ impl Season {
             let game: &mut Game = game_item.1;
             game.simulate_if_undecided();
         }
+        self.evaluate_simulation_results();
+    }
+
+    fn evaluate_simulation_results(&mut self) {
+        todo!();
     }
 
     fn load_teams(&mut self) {
@@ -197,6 +207,28 @@ impl Season {
         for row in run_query(query) {
             let team: Team = Team::new_from_db_row(row);
             self.teams.insert(team.team_id, team);
+        }
+    }
+
+    fn load_conference_division_mapping(&mut self) {
+        for (_, team) in self.teams.iter() {
+            if !self.conference_mapping.contains_key(&team.conference) {
+                self.conference_mapping
+                    .insert(team.conference.clone(), Vec::new());
+            }
+
+            let conference_vector: &mut Vec<i32> =
+                self.conference_mapping.get_mut(&team.conference).unwrap();
+            conference_vector.push(team.team_id.clone());
+
+            if !self.division_mapping.contains_key(&team.division) {
+                self.division_mapping
+                    .insert(team.division.clone(), Vec::new());
+            }
+
+            let division_vector: &mut Vec<i32> =
+                self.division_mapping.get_mut(&team.division).unwrap();
+            division_vector.push(team.team_id.clone());
         }
     }
 

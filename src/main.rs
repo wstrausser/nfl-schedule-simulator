@@ -6,8 +6,8 @@ fn main() {
     let season_year: i32 = 2022;
     let mut season: Season = Season::new_from_year(season_year);
 
-    season.run_simulation();
-    println!("{:#?}", season);
+    // season.run_simulation();
+    println!("{:#?}", season.division_mapping);
 }
 
 #[allow(dead_code)]
