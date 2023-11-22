@@ -26,7 +26,7 @@ impl Team {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum GameResult {
     HomeWin,
     AwayWin,
@@ -117,11 +117,47 @@ impl Game {
 }
 
 #[derive(Debug)]
-pub struct SeasonSimulationResult {
+pub struct TeamRecord {
+    pub overall_record: (u8, u8, u8),
+    pub overall_percent: f64,
+    pub conference_record: (u8, u8, u8),
+    pub conference_percent: f64,
+    pub division_record: (u8, u8, u8),
+    pub division_percent: f64,
+}
+
+impl TeamRecord {
+    fn new() -> TeamRecord {
+        TeamRecord {
+            overall_record: (0, 0, 0),
+            overall_percent: 0.0,
+            conference_record: (0, 0, 0),
+            conference_percent: 0.0,
+            division_record: (0, 0, 0),
+            division_percent: 0.0,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct CurrentSimulationResult {
+    pub team_records: HashMap<i32, TeamRecord>,
     pub playoff_seeding: HashMap<u8, Vec<Team>>,
     pub division_winners: Vec<Team>,
     pub wildcard_teams: Vec<Team>,
     pub draft_order: Vec<Team>,
+}
+
+impl CurrentSimulationResult {
+    fn new() -> CurrentSimulationResult {
+        CurrentSimulationResult {
+            team_records: HashMap::new(),
+            playoff_seeding: HashMap::new(),
+            division_winners: Vec::new(),
+            wildcard_teams: Vec::new(),
+            draft_order: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -148,7 +184,7 @@ pub struct Season {
     pub division_mapping: HashMap<String, Vec<i32>>,
     pub actual_games: HashMap<i32, Game>,
     pub current_simulated_games: HashMap<i32, Game>,
-    pub current_simulation_result: Option<SeasonSimulationResult>,
+    pub current_simulation_result: CurrentSimulationResult,
     pub overall_results: HashMap<SimulationResultLookup, TeamSimulationResults>,
 }
 
@@ -161,7 +197,7 @@ impl Season {
             division_mapping: HashMap::new(),
             actual_games: HashMap::new(),
             current_simulated_games: HashMap::new(),
-            current_simulation_result: None,
+            current_simulation_result: CurrentSimulationResult::new(),
             overall_results: HashMap::new(),
         };
 
@@ -172,6 +208,7 @@ impl Season {
     }
 
     pub fn run_simulation(&mut self) {
+        self.current_simulation_result = CurrentSimulationResult::new();
         self.current_simulated_games = self.actual_games.clone();
         for game_item in self.current_simulated_games.iter_mut() {
             let game: &mut Game = game_item.1;
@@ -181,7 +218,117 @@ impl Season {
     }
 
     fn evaluate_simulation_results(&mut self) {
-        todo!();
+        self.populate_records();
+        self.calculate_percentages();
+        self.evaluate_divisions();
+    }
+
+    fn populate_records(&mut self) {
+        for (team_id, _) in self.teams.iter() {
+            self.current_simulation_result
+                .team_records
+                .insert(team_id.clone(), TeamRecord::new());
+        }
+        for (game_id, game) in self.current_simulated_games.iter() {
+            let (winning_team, losing_team): (Option<i32>, Option<i32>) = {
+                if game.game_result == Some(GameResult::HomeWin) {
+                    (
+                        Some(game.home_team.team_id.clone()),
+                        Some(game.away_team.team_id.clone()),
+                    )
+                } else if game.game_result == Some(GameResult::AwayWin) {
+                    (
+                        Some(game.away_team.team_id.clone()),
+                        Some(game.home_team.team_id.clone()),
+                    )
+                } else if game.game_result == Some(GameResult::Tie) {
+                    (None, None)
+                } else {
+                    panic!("Game not simulated yet");
+                }
+            };
+
+            match winning_team {
+                Some(team_id) => {
+                    let record = self
+                        .current_simulation_result
+                        .team_records
+                        .get_mut(&team_id)
+                        .unwrap();
+                    record.overall_record.0 += 1;
+                    if game.conference_game {
+                        record.conference_record.0 += 1;
+                    }
+                    if game.division_game {
+                        record.division_record.0 += 1;
+                    }
+                }
+                None => {
+                    let team_id = game.home_team.team_id;
+                    let record = self
+                        .current_simulation_result
+                        .team_records
+                        .get_mut(&team_id)
+                        .unwrap();
+                    record.overall_record.2 += 1;
+                    if game.conference_game {
+                        record.conference_record.2 += 1;
+                    }
+                    if game.division_game {
+                        record.division_record.2 += 1;
+                    }
+                }
+            };
+            match losing_team {
+                Some(team_id) => {
+                    let record = self
+                        .current_simulation_result
+                        .team_records
+                        .get_mut(&team_id)
+                        .unwrap();
+                    record.overall_record.1 += 1;
+                    if game.conference_game {
+                        record.conference_record.1 += 1;
+                    }
+                    if game.division_game {
+                        record.division_record.1 += 1;
+                    }
+                }
+                None => {
+                    let team_id = game.away_team.team_id;
+                    let record = self
+                        .current_simulation_result
+                        .team_records
+                        .get_mut(&team_id)
+                        .unwrap();
+                    record.overall_record.2 += 1;
+                    if game.conference_game {
+                        record.conference_record.2 += 1;
+                    }
+                    if game.division_game {
+                        record.division_record.2 += 1;
+                    }
+                }
+            };
+        }
+    }
+
+    fn calculate_percentages(&mut self) {
+        fn calculate_from_tuple(record_tuple: (u8, u8, u8)) -> f64 {
+            let (wins, losses, ties) = record_tuple;
+            let computed_wins: f64 = f64::from(wins) + (f64::from(ties) / 2.0);
+
+            computed_wins / (f64::from(wins + losses + ties))
+        }
+        for (team_id, record) in self.current_simulation_result.team_records.iter_mut() {
+            record.overall_percent = calculate_from_tuple(record.overall_record);
+            record.conference_percent = calculate_from_tuple(record.conference_record);
+            record.division_percent = calculate_from_tuple(record.division_record);
+        }
+    }
+
+    fn evaluate_divisions(&mut self) {
+        for (division, team_ids) in self.division_mapping.iter() {}
     }
 
     fn load_teams(&mut self) {

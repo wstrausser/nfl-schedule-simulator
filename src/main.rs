@@ -6,8 +6,14 @@ fn main() {
     let season_year: i32 = 2022;
     let mut season: Season = Season::new_from_year(season_year);
 
-    // season.run_simulation();
-    println!("{:#?}", season.division_mapping);
+    season.run_simulation();
+    // 26 is NYJ
+    println!(
+        "{:#?}",
+        season.current_simulation_result.team_records.get(&26)
+    );
+
+    // run_timed_simulations(season_year, 10000);
 }
 
 #[allow(dead_code)]
