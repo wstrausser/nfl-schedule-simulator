@@ -3,7 +3,7 @@ use std::io::Write;
 use std::time::Instant;
 
 fn main() {
-    let season_year: i32 = 2022;
+    let season_year: i32 = 2023;
     let mut season: Season = Season::new_from_year(season_year);
 
     season.run_simulation();

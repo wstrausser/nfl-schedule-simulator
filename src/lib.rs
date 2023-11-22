@@ -2,6 +2,7 @@ use dotenv::dotenv;
 use postgres::{Client, NoTls, Row};
 use rand::Rng;
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::env::var;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -119,22 +120,22 @@ impl Game {
 #[derive(Debug)]
 pub struct TeamRecord {
     pub overall_record: (u8, u8, u8),
-    pub overall_percent: f64,
+    pub overall_percent: u8,
     pub conference_record: (u8, u8, u8),
-    pub conference_percent: f64,
+    pub conference_percent: u8,
     pub division_record: (u8, u8, u8),
-    pub division_percent: f64,
+    pub division_percent: u8,
 }
 
 impl TeamRecord {
     fn new() -> TeamRecord {
         TeamRecord {
             overall_record: (0, 0, 0),
-            overall_percent: 0.0,
+            overall_percent: 0,
             conference_record: (0, 0, 0),
-            conference_percent: 0.0,
+            conference_percent: 0,
             division_record: (0, 0, 0),
-            division_percent: 0.0,
+            division_percent: 0,
         }
     }
 }
@@ -314,11 +315,14 @@ impl Season {
     }
 
     fn calculate_percentages(&mut self) {
-        fn calculate_from_tuple(record_tuple: (u8, u8, u8)) -> f64 {
-            let (wins, losses, ties) = record_tuple;
-            let computed_wins: f64 = f64::from(wins) + (f64::from(ties) / 2.0);
+        fn calculate_from_tuple(record_tuple: (u8, u8, u8)) -> u8 {
+            let (wins, mut losses, mut ties) = record_tuple;
+            let wins: u32 = u32::from(wins);
+            let losses: u32 = u32::from(losses);
+            let ties: u32 = u32::from(ties);
+            let computed_wins: u32 = (wins * 100) + ((ties * 100) / 2);
 
-            computed_wins / (f64::from(wins + losses + ties))
+            u8::try_from(computed_wins / (wins + losses + ties)).unwrap()
         }
         for (team_id, record) in self.current_simulation_result.team_records.iter_mut() {
             record.overall_percent = calculate_from_tuple(record.overall_record);
