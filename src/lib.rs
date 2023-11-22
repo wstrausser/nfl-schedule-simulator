@@ -117,7 +117,7 @@ impl Game {
 }
 
 #[derive(Debug)]
-pub struct SimulationResult {
+pub struct SeasonSimulationResult {
     pub playoff_seeding: HashMap<u8, Vec<Team>>,
     pub division_winners: Vec<Team>,
     pub wildcard_teams: Vec<Team>,
@@ -125,12 +125,29 @@ pub struct SimulationResult {
 }
 
 #[derive(Debug)]
+pub struct SimulationResultLookup {
+    pub game_id: i32,
+    pub game_result: GameResult,
+    pub team_id: i32,
+}
+
+#[derive(Debug)]
+pub struct TeamSimulationResults {
+    pub made_playoffs: i32,
+    pub playoff_seedings: Vec<i32>,
+    pub division_winner: i32,
+    pub wildcard_team: i32,
+    pub draft_picks: Vec<i32>,
+}
+
+#[derive(Debug)]
 pub struct Season {
     pub season_year: i32,
     pub teams: HashMap<i32, Team>,
     pub actual_games: HashMap<i32, Game>,
-    pub simulated_games: HashMap<i32, Game>,
-    pub simulation_result: Option<SimulationResult>,
+    pub current_simulated_games: HashMap<i32, Game>,
+    pub current_simulation_result: Option<SeasonSimulationResult>,
+    pub overall_results: HashMap<SimulationResultLookup, TeamSimulationResults>,
 }
 
 impl Season {
@@ -139,8 +156,9 @@ impl Season {
             season_year,
             teams: HashMap::new(),
             actual_games: HashMap::new(),
-            simulated_games: HashMap::new(),
-            simulation_result: None,
+            current_simulated_games: HashMap::new(),
+            current_simulation_result: None,
+            overall_results: HashMap::new(),
         };
 
         season.load_teams();
@@ -149,8 +167,8 @@ impl Season {
     }
 
     pub fn run_simulation(&mut self) {
-        self.simulated_games = self.actual_games.clone();
-        for game_item in self.simulated_games.iter_mut() {
+        self.current_simulated_games = self.actual_games.clone();
+        for game_item in self.current_simulated_games.iter_mut() {
             let game: &mut Game = game_item.1;
             game.simulate_if_undecided();
         }
