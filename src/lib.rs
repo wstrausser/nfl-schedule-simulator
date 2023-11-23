@@ -332,7 +332,51 @@ impl Season {
     }
 
     fn evaluate_divisions(&mut self) {
-        for (division, team_ids) in self.division_mapping.iter() {}
+        for (division, team_ids) in self.division_mapping.iter_mut() {
+            let mut working_vec: Vec<(i32, (u16, u16, u16))> = Vec::new();
+            for team_id in team_ids {
+                let team_record = self
+                    .current_simulation_result
+                    .team_records
+                    .get(team_id)
+                    .unwrap();
+                let team_pcts = (
+                    team_id.clone(),
+                    (
+                        team_record.overall_percent.clone(),
+                        team_record.conference_percent.clone(),
+                        team_record.division_percent.clone(),
+                    ),
+                );
+                working_vec.push(team_pcts);
+            }
+            working_vec.sort_by_key(|t| t.1 .0);
+            working_vec.reverse();
+
+            let mut division_winner: i32 = working_vec.get(0).unwrap().0.clone();
+
+            let max_pct = working_vec.get(0).unwrap().1 .0;
+            let mut tied_teams = Vec::new();
+            for (team_id, pcts) in &working_vec {
+                if pcts.0 == max_pct {
+                    tied_teams.push(team_id.clone());
+                } else {
+                    break;
+                }
+            }
+            if tied_teams.len() > 1 {
+                Season::choose_head_to_head_winner(
+                    &tied_teams,
+                    self.current_simulated_games.clone(),
+                );
+            }
+
+            println!("{}: {:?}", division, working_vec);
+        }
+    }
+
+    fn choose_head_to_head_winner(tied_teams: &Vec<i32>, games: HashMap<i32, Game>) -> Vec<i32> {
+        todo!();
     }
 
     fn load_teams(&mut self) {
