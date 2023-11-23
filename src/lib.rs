@@ -117,7 +117,7 @@ impl Game {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TeamRecord {
     pub overall_record: (u8, u8, u8),
     pub overall_percent: u16,
@@ -143,10 +143,10 @@ impl TeamRecord {
 #[derive(Debug)]
 pub struct CurrentSimulationResult {
     pub team_records: HashMap<i32, TeamRecord>,
-    pub playoff_seeding: HashMap<u8, Vec<Team>>,
-    pub division_winners: Vec<Team>,
-    pub wildcard_teams: Vec<Team>,
-    pub draft_order: Vec<Team>,
+    pub playoff_seeding: HashMap<u8, HashSet<i32>>,
+    pub division_winners: HashSet<i32>,
+    pub wildcard_teams: HashSet<i32>,
+    pub draft_order: Vec<i32>,
 }
 
 impl CurrentSimulationResult {
@@ -154,8 +154,8 @@ impl CurrentSimulationResult {
         CurrentSimulationResult {
             team_records: HashMap::new(),
             playoff_seeding: HashMap::new(),
-            division_winners: Vec::new(),
-            wildcard_teams: Vec::new(),
+            division_winners: HashSet::new(),
+            wildcard_teams: HashSet::new(),
             draft_order: Vec::new(),
         }
     }
@@ -355,8 +355,6 @@ impl Season {
             working_vec.sort_by_key(|t| t.1 .0);
             working_vec.reverse();
 
-            let mut division_winner: i32 = working_vec.get(0).unwrap().0.clone();
-
             let max_pct = working_vec.get(0).unwrap().1 .0;
             let mut tied_teams = HashSet::new();
             for (team_id, pcts) in &working_vec {
@@ -366,24 +364,68 @@ impl Season {
                     break;
                 }
             }
+            println!("\n{}", division);
+            println!("{:?}", tied_teams);
 
             if tied_teams.len() > 1 {
                 tied_teams = Self::evaluate_head_to_head(
                     tied_teams.clone(),
                     self.current_simulated_games.clone(),
                 );
+                println!("{:?}", tied_teams);
+            }
+            if tied_teams.len() > 1 {
+                tied_teams = Self::evaluate_division_records(
+                    tied_teams.clone(),
+                    self.current_simulation_result.team_records.clone(),
+                );
+                println!("{:?}", tied_teams);
             }
             if tied_teams.len() > 1 {
                 tied_teams = Self::evaluate_common_games(
                     tied_teams.clone(),
                     self.current_simulated_games.clone(),
                 );
+                println!("{:?}", tied_teams);
             }
-            if tied_teams.len() > 1 {}
-            println!("{:?}", tied_teams);
+            if tied_teams.len() > 1 {
+                tied_teams = Self::pick_random_team_from_tied(tied_teams.clone());
+                println!("{:?}", tied_teams);
+            }
 
-            // println!("{}: {:?}", division, working_vec);
+            let tied_teams = Vec::from_iter(tied_teams);
+            let division_winner: i32 = tied_teams.first().unwrap().clone();
+
+            self.current_simulation_result
+                .division_winners
+                .insert(division_winner);
         }
+    }
+
+    fn evaluate_division_records(
+        tied_teams: HashSet<i32>,
+        records: HashMap<i32, TeamRecord>,
+    ) -> HashSet<i32> {
+        let mut working_vec: Vec<(i32, u16)> = Vec::new();
+        for team_id in tied_teams.iter() {
+            working_vec.push((
+                team_id.clone(),
+                records.get(&team_id).unwrap().division_percent.clone(),
+            ));
+        }
+        working_vec.sort_by_key(|t| t.1);
+        working_vec.reverse();
+
+        let mut remaining_tied_teams: HashSet<i32> = HashSet::new();
+        let max_pct = working_vec.get(0).unwrap().1;
+        for (team_id, pct) in working_vec {
+            if pct == max_pct {
+                remaining_tied_teams.insert(team_id.clone());
+            } else {
+                break;
+            }
+        }
+        remaining_tied_teams
     }
 
     fn evaluate_head_to_head(tied_teams: HashSet<i32>, games: HashMap<i32, Game>) -> HashSet<i32> {
@@ -522,6 +564,17 @@ impl Season {
         }
 
         remaining_tied_teams
+    }
+
+    fn pick_random_team_from_tied(tied_teams: HashSet<i32>) -> HashSet<i32> {
+        let tied_teams_vec: Vec<i32> = Vec::from_iter(tied_teams.clone());
+        let mut rng: rand::rngs::ThreadRng = rand::thread_rng();
+        let index = rng.gen_range(0..tied_teams_vec.len());
+        let winner = tied_teams_vec.get(index).unwrap().clone();
+
+        let mut tied_teams = HashSet::new();
+        tied_teams.insert(winner);
+        tied_teams
     }
 
     fn load_teams(&mut self) {

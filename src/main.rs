@@ -8,6 +8,7 @@ fn main() {
 
     season.run_simulation();
 
+    // println!("{:#?}", season.current_simulation_result.team_records);
     // 26 is NYJ
     // println!(
     //     "{:#?}",
