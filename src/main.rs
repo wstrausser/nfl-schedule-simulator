@@ -7,6 +7,7 @@ fn main() {
     let mut season: Season = Season::new_from_year(season_year);
 
     season.run_simulation();
+
     // 26 is NYJ
     // println!(
     //     "{:#?}",
