@@ -120,11 +120,11 @@ impl Game {
 #[derive(Debug)]
 pub struct TeamRecord {
     pub overall_record: (u8, u8, u8),
-    pub overall_percent: u8,
+    pub overall_percent: u16,
     pub conference_record: (u8, u8, u8),
-    pub conference_percent: u8,
+    pub conference_percent: u16,
     pub division_record: (u8, u8, u8),
-    pub division_percent: u8,
+    pub division_percent: u16,
 }
 
 impl TeamRecord {
@@ -315,14 +315,14 @@ impl Season {
     }
 
     fn calculate_percentages(&mut self) {
-        fn calculate_from_tuple(record_tuple: (u8, u8, u8)) -> u8 {
+        fn calculate_from_tuple(record_tuple: (u8, u8, u8)) -> u16 {
             let (wins, mut losses, mut ties) = record_tuple;
             let wins: u32 = u32::from(wins);
             let losses: u32 = u32::from(losses);
             let ties: u32 = u32::from(ties);
-            let computed_wins: u32 = (wins * 100) + ((ties * 100) / 2);
+            let computed_wins: u32 = (wins * 1000) + ((ties * 1000) / 2);
 
-            u8::try_from(computed_wins / (wins + losses + ties)).unwrap()
+            u16::try_from(computed_wins / (wins + losses + ties)).unwrap()
         }
         for (team_id, record) in self.current_simulation_result.team_records.iter_mut() {
             record.overall_percent = calculate_from_tuple(record.overall_record);
