@@ -1,5 +1,4 @@
 use dotenv::dotenv;
-use kdam::tqdm;
 use postgres::{Client, NoTls, Row};
 use rand::Rng;
 use std::collections::{HashMap, HashSet};
@@ -210,6 +209,7 @@ pub struct Season {
     pub conference_mapping: HashMap<String, Vec<i32>>,
     pub division_mapping: HashMap<String, Vec<i32>>,
     pub actual_games: HashMap<i32, Game>,
+    pub simulation_id: Option<u64>,
     pub current_simulation_game: Option<(i32, GameResult)>,
     pub current_simulation_base_games: HashMap<i32, Game>,
     pub current_simulation_games: HashMap<i32, Game>,
@@ -225,6 +225,7 @@ impl Season {
             conference_mapping: HashMap::new(),
             division_mapping: HashMap::new(),
             actual_games: HashMap::new(),
+            simulation_id: None,
             current_simulation_game: None,
             current_simulation_base_games: HashMap::new(),
             current_simulation_games: HashMap::new(),
@@ -235,6 +236,7 @@ impl Season {
         season.load_teams();
         season.load_conference_division_mapping();
         season.load_games();
+        season.set_simulation_id();
         season
     }
 
@@ -271,6 +273,7 @@ impl Season {
             game.simulate_if_undecided();
         }
         self.evaluate_simulation_results();
+        self.insert_results();
     }
 
     fn evaluate_simulation_results(&mut self) {
@@ -720,6 +723,16 @@ impl Season {
         }
 
         self.current_simulation_base_games = self.actual_games.clone();
+    }
+
+    fn set_simulation_id(&mut self) {
+        // Insert new simulation into db and add simulation_id to Season struct
+        todo!()
+    }
+
+    fn insert_results(&mut self) {
+        // Insert all results in self.overall_results into database
+        todo!()
     }
 }
 
