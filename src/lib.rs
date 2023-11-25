@@ -1,4 +1,5 @@
 use dotenv::dotenv;
+use kdam::tqdm;
 use postgres::{Client, NoTls, Row};
 use rand::Rng;
 use std::collections::{HashMap, HashSet};
@@ -27,7 +28,7 @@ impl Team {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum GameResult {
     HomeWin,
     AwayWin,
@@ -161,7 +162,7 @@ impl CurrentSimulationResult {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct SimulationResultLookup {
     pub game_id: i32,
     pub game_result: GameResult,
@@ -170,11 +171,36 @@ pub struct SimulationResultLookup {
 
 #[derive(Debug)]
 pub struct TeamSimulationResults {
+    pub sims_run: u64,
     pub made_playoffs: i32,
     pub playoff_seedings: Vec<i32>,
     pub division_winner: i32,
     pub wildcard_team: i32,
     pub draft_picks: Vec<i32>,
+}
+
+impl TeamSimulationResults {
+    fn new() -> TeamSimulationResults {
+        TeamSimulationResults {
+            sims_run: 0,
+            made_playoffs: 0,
+            playoff_seedings: Vec::new(),
+            division_winner: 0,
+            wildcard_team: 0,
+            draft_picks: Vec::new(),
+        }
+    }
+
+    fn new_with_sims(sims_run: u64) -> TeamSimulationResults {
+        TeamSimulationResults {
+            sims_run: sims_run,
+            made_playoffs: 0,
+            playoff_seedings: Vec::new(),
+            division_winner: 0,
+            wildcard_team: 0,
+            draft_picks: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -184,7 +210,9 @@ pub struct Season {
     pub conference_mapping: HashMap<String, Vec<i32>>,
     pub division_mapping: HashMap<String, Vec<i32>>,
     pub actual_games: HashMap<i32, Game>,
-    pub current_simulated_games: HashMap<i32, Game>,
+    pub current_simulation_game: Option<(i32, GameResult)>,
+    pub current_simulation_base_games: HashMap<i32, Game>,
+    pub current_simulation_games: HashMap<i32, Game>,
     pub current_simulation_result: CurrentSimulationResult,
     pub overall_results: HashMap<SimulationResultLookup, TeamSimulationResults>,
 }
@@ -197,7 +225,9 @@ impl Season {
             conference_mapping: HashMap::new(),
             division_mapping: HashMap::new(),
             actual_games: HashMap::new(),
-            current_simulated_games: HashMap::new(),
+            current_simulation_game: None,
+            current_simulation_base_games: HashMap::new(),
+            current_simulation_games: HashMap::new(),
             current_simulation_result: CurrentSimulationResult::new(),
             overall_results: HashMap::new(),
         };
@@ -208,10 +238,35 @@ impl Season {
         season
     }
 
+    pub fn simulate_for_game(&mut self, game_id: i32, game_result: GameResult, sims: u64) {
+        self.current_simulation_game = Some((game_id.clone(), game_result.clone()));
+        self.current_simulation_base_games = self.actual_games.clone();
+        self.current_simulation_base_games
+            .get_mut(&game_id)
+            .unwrap()
+            .game_result = Some(game_result.clone());
+
+        for (team_id, _) in self.teams.iter() {
+            let new_lookup = SimulationResultLookup {
+                game_id: game_id.clone(),
+                game_result: game_result.clone(),
+                team_id: team_id.clone(),
+            };
+            self.overall_results.insert(
+                new_lookup,
+                TeamSimulationResults::new_with_sims(sims.clone()),
+            );
+        }
+
+        for _ in 0..sims {
+            self.run_simulation();
+        }
+    }
+
     pub fn run_simulation(&mut self) {
         self.current_simulation_result = CurrentSimulationResult::new();
-        self.current_simulated_games = self.actual_games.clone();
-        for game_item in self.current_simulated_games.iter_mut() {
+        self.current_simulation_games = self.current_simulation_base_games.clone();
+        for game_item in self.current_simulation_games.iter_mut() {
             let game: &mut Game = game_item.1;
             game.simulate_if_undecided();
         }
@@ -222,6 +277,7 @@ impl Season {
         self.populate_records();
         self.calculate_percentages();
         self.evaluate_divisions();
+        self.increment_overall_results();
     }
 
     fn populate_records(&mut self) {
@@ -230,7 +286,7 @@ impl Season {
                 .team_records
                 .insert(team_id.clone(), TeamRecord::new());
         }
-        for (game_id, game) in self.current_simulated_games.iter() {
+        for (game_id, game) in self.current_simulation_games.iter() {
             let (winning_team, losing_team): (Option<i32>, Option<i32>) = {
                 if game.game_result == Some(GameResult::HomeWin) {
                     (
@@ -364,33 +420,27 @@ impl Season {
                     break;
                 }
             }
-            println!("\n{}", division);
-            println!("{:?}", tied_teams);
 
             if tied_teams.len() > 1 {
                 tied_teams = Self::evaluate_head_to_head(
                     tied_teams.clone(),
-                    self.current_simulated_games.clone(),
+                    self.current_simulation_games.clone(),
                 );
-                println!("{:?}", tied_teams);
             }
             if tied_teams.len() > 1 {
                 tied_teams = Self::evaluate_division_records(
                     tied_teams.clone(),
                     self.current_simulation_result.team_records.clone(),
                 );
-                println!("{:?}", tied_teams);
             }
             if tied_teams.len() > 1 {
                 tied_teams = Self::evaluate_common_games(
                     tied_teams.clone(),
-                    self.current_simulated_games.clone(),
+                    self.current_simulation_games.clone(),
                 );
-                println!("{:?}", tied_teams);
             }
             if tied_teams.len() > 1 {
                 tied_teams = Self::pick_random_team_from_tied(tied_teams.clone());
-                println!("{:?}", tied_teams);
             }
 
             let tied_teams = Vec::from_iter(tied_teams);
@@ -577,6 +627,24 @@ impl Season {
         tied_teams
     }
 
+    fn increment_overall_results(&mut self) {
+        let simulation_game = self.current_simulation_game.as_ref().unwrap();
+        let current_result = &self.current_simulation_result;
+        for team_id in current_result.division_winners.iter() {
+            let lookup = SimulationResultLookup {
+                game_id: simulation_game.0.clone(),
+                game_result: simulation_game.1.clone(),
+                team_id: team_id.clone(),
+            };
+            match self.overall_results.get_mut(&lookup) {
+                Some(result) => {
+                    result.division_winner += 1;
+                }
+                None => panic!("Overall results not initialized properly"),
+            }
+        }
+    }
+
     fn load_teams(&mut self) {
         let query: String = format!(
             "
@@ -650,6 +718,8 @@ impl Season {
             let game: Game = Game::new_from_db_row(row, self.teams.clone());
             self.actual_games.insert(game.game_id.clone(), game);
         }
+
+        self.current_simulation_base_games = self.actual_games.clone();
     }
 }
 
