@@ -3,8 +3,12 @@ use nfl_schedule_simulator::*;
 use std::io::Write;
 use std::time::Instant;
 
+mod migrations;
+
 fn main() {
-    let season_year: i32 = 2023;
+    migrations::rebuild();
+    // migrations::destroy();
+    // let season_year: i32 = 2023;
     // let mut season: Season = Season::new_from_year(season_year);
 
     // season.run_simulation();
@@ -16,7 +20,7 @@ fn main() {
     //     season.current_simulation_result.team_records.get(&26)
     // );
 
-    run_all_game_simulations(season_year, 1000);
+    // run_all_game_simulations(season_year, 1000);
 }
 
 #[allow(dead_code)]

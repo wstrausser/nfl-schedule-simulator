@@ -750,11 +750,19 @@ fn connect() -> Client {
     client
 }
 
-fn run_query(query: String) -> Vec<Row> {
+pub fn run_query(query: String) -> Vec<Row> {
     let mut client: Client = connect();
     let results = match client.query(&query, &[]) {
         Ok(r) => r,
         Err(e) => panic!("{}", e),
     };
     results
+}
+
+pub fn execute(statement: String) {
+    let mut client: Client = connect();
+    match client.execute(&statement, &[]) {
+        Ok(_) => {}
+        Err(e) => panic!("{}", e),
+    };
 }
