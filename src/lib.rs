@@ -763,6 +763,9 @@ pub fn execute(statement: String) {
     let mut client: Client = connect();
     match client.execute(&statement, &[]) {
         Ok(_) => {}
-        Err(e) => panic!("{}", e),
+        Err(e) => println!(
+            "Failed to execute statement:\n\n{}\n\n{}\n------------------------------",
+            statement, e
+        ),
     };
 }

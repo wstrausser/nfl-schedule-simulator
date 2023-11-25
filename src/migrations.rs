@@ -23,7 +23,6 @@ fn execute_sql_file(file_path: &str) {
     let statements: Vec<String> = parse_sql(contents);
 
     for statement in statements {
-        println!("{}", statement);
         execute(statement)
     }
 }
