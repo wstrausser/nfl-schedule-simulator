@@ -11,6 +11,10 @@ fn main() {
     // let season_year: i32 = 2023;
     // let mut season: Season = Season::new_from_year(season_year);
 
+    // season.set_simulation_id(1000);
+
+    // println!("{:#?}", season);
+
     // season.run_simulation();
 
     // println!("{:#?}", season.current_simulation_result.team_records);

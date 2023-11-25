@@ -1,4 +1,5 @@
 use dotenv::dotenv;
+use kdam::tqdm;
 use postgres::{Client, NoTls, Row};
 use rand::Rng;
 use std::collections::{HashMap, HashSet};
@@ -209,7 +210,7 @@ pub struct Season {
     pub conference_mapping: HashMap<String, Vec<i32>>,
     pub division_mapping: HashMap<String, Vec<i32>>,
     pub actual_games: HashMap<i32, Game>,
-    pub simulation_id: Option<u64>,
+    pub simulation_id: Option<i32>,
     pub current_simulation_game: Option<(i32, GameResult)>,
     pub current_simulation_base_games: HashMap<i32, Game>,
     pub current_simulation_games: HashMap<i32, Game>,
@@ -236,8 +237,23 @@ impl Season {
         season.load_teams();
         season.load_conference_division_mapping();
         season.load_games();
-        season.set_simulation_id();
         season
+    }
+
+    pub fn run_all_game_simulations(&mut self, sims: u64) {
+        self.set_simulation_id(sims.clone());
+        let games = self.actual_games.clone();
+        for (game_id, _) in tqdm!(games.iter()) {
+            let actual_game: Game = self.actual_games.get(game_id).unwrap().clone();
+            match actual_game.game_result {
+                Some(_) => {}
+                None => {
+                    self.simulate_for_game(game_id.clone(), GameResult::HomeWin, sims);
+                    self.simulate_for_game(game_id.clone(), GameResult::AwayWin, sims);
+                    self.simulate_for_game(game_id.clone(), GameResult::Tie, sims);
+                }
+            }
+        }
     }
 
     pub fn simulate_for_game(&mut self, game_id: i32, game_result: GameResult, sims: u64) {
@@ -725,9 +741,33 @@ impl Season {
         self.current_simulation_base_games = self.actual_games.clone();
     }
 
-    fn set_simulation_id(&mut self) {
+    pub fn set_simulation_id(&mut self, sims: u64) {
         // Insert new simulation into db and add simulation_id to Season struct
-        todo!()
+        let statement = format!(
+            "
+                INSERT INTO  nfl.simulations
+                VALUES (
+                    DEFAULT,
+                    NOW(),
+                    {}
+                )
+            ",
+            sims,
+        );
+        execute(statement);
+
+        let query = String::from(
+            "
+            SELECT MAX(simulation_id)
+            FROM nfl.simulations;
+        ",
+        );
+
+        let results: Vec<Row> = run_query(query);
+
+        for row in results {
+            self.simulation_id = Some(row.get(0));
+        }
     }
 
     fn insert_results(&mut self) {
