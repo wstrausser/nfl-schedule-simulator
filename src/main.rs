@@ -6,7 +6,7 @@ use std::time::Instant;
 mod migrations;
 
 fn main() {
-    migrations::rebuild();
+    // migrations::rebuild();
     // migrations::destroy();
     let season_year: i32 = 2023;
     let mut season: Season = Season::new_from_year(season_year);
@@ -24,7 +24,7 @@ fn main() {
     //     season.current_simulation_result.team_records.get(&26)
     // );
 
-    season.run_all_game_simulations(10000);
+    // season.run_all_game_simulations(10000);
 }
 
 #[allow(dead_code)]

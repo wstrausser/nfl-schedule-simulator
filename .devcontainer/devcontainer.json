@@ -1,6 +1,9 @@
 {
     "name": "NFL Season Simulator",
-    "image": "mcr.microsoft.com/devcontainers/rust:latest",
+    "image": "mcr.microsoft.com/devcontainers/rust:bullseye",
+    "mounts": [
+        "source=${localEnv:HOME}/.ssh,target=/vscode/.ssh,type=bind,consistency=cached",
+    ],
     // "postStartCommand": "yes | bash ./.devcontainer/post_start_command.sh",
     "customizations": {
         "settings": {
