@@ -5,7 +5,7 @@ use std::time::Instant;
 mod migrations;
 
 fn main() {
-    // migrations::rebuild();
+    migrations::rebuild();
     // migrations::destroy();
     let season_year: i32 = 2023;
     let mut season: Season = Season::new_from_year(season_year);
