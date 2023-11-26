@@ -141,7 +141,7 @@ impl TeamRecord {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct CurrentSimulationResult {
     pub team_records: HashMap<i32, TeamRecord>,
     pub playoff_seeding: HashMap<u8, HashSet<i32>>,
@@ -169,7 +169,7 @@ pub struct SimulationResultLookup {
     pub team_id: i32,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TeamSimulationResults {
     pub made_playoffs: i32,
     pub playoff_seedings: Vec<i32>,
@@ -190,7 +190,7 @@ impl TeamSimulationResults {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum PoolType {
     Division,
     Wildcard,
@@ -198,34 +198,31 @@ pub enum PoolType {
     PlayoffSeeding,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TeamPool {
     pub pool_type: PoolType,
     pub teams: HashSet<i32>,
+    pub conference_mapping: HashMap<String, Vec<i32>>,
+    pub division_mapping: HashMap<String, Vec<i32>>,
     pub tied_teams: HashSet<i32>,
     pub winner: Option<i32>,
-    pub winners: Option<HashSet<i32>>,
     pub ranking: Option<Vec<i32>>,
     pub team_records: HashMap<i32, TeamRecord>,
     pub games: HashMap<i32, Game>,
 }
 
 impl TeamPool {
-    pub fn new(
-        source_vec: Vec<i32>,
-        pool_type: PoolType,
-        team_records: &HashMap<i32, TeamRecord>,
-        games: &HashMap<i32, Game>,
-    ) -> TeamPool {
+    pub fn new(source_vec: Vec<i32>, pool_type: PoolType, season: &Season) -> TeamPool {
         TeamPool {
             pool_type,
             teams: HashSet::from_iter(source_vec.clone()),
+            conference_mapping: season.conference_mapping.clone(),
+            division_mapping: season.division_mapping.clone(),
             tied_teams: HashSet::from_iter(source_vec.clone()),
             winner: None,
-            winners: None,
             ranking: None,
-            team_records: team_records.clone(),
-            games: games.clone(),
+            team_records: season.current_simulation_result.team_records.clone(),
+            games: season.current_simulation_games.clone(),
         }
     }
 
@@ -457,7 +454,7 @@ impl TeamPool {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Season {
     pub season_year: i32,
     pub teams: HashMap<i32, Team>,
@@ -552,6 +549,7 @@ impl Season {
         self.populate_records();
         self.calculate_percentages();
         self.evaluate_divisions();
+        self.evaluate_wildcards();
         self.increment_overall_results();
     }
 
@@ -665,19 +663,16 @@ impl Season {
     }
 
     fn evaluate_divisions(&mut self) {
-        for (_, team_ids) in self.division_mapping.iter_mut() {
-            let mut team_pool: TeamPool = TeamPool::new(
-                team_ids.clone(),
-                PoolType::Division,
-                &self.current_simulation_result.team_records,
-                &self.current_simulation_games,
-            );
+        for (_, team_ids) in self.division_mapping.iter() {
+            let mut team_pool: TeamPool = TeamPool::new(team_ids.clone(), PoolType::Division, self);
             team_pool.evaluate();
             self.current_simulation_result
                 .division_winners
                 .insert(team_pool.winner.unwrap());
         }
     }
+
+    fn evaluate_wildcards(&mut self) {}
 
     fn increment_overall_results(&mut self) {
         let simulation_game = self.current_simulation_game.as_ref().unwrap();
