@@ -237,7 +237,13 @@ impl TeamPool {
     }
 
     fn evaluate_division(&mut self) {
-        self.break_by_overall_percent();
+        self.break_by_percent("overall");
+        self.break_by_percent("division");
+        self.break_by_head_to_head();
+        self.break_by_common_games();
+        self.break_by_percent("conference");
+        self.break_by_random();
+        self.winner = Some(self.tied_teams.iter().next().unwrap().clone());
     }
 
     fn evaluate_wildcard(&mut self) {
@@ -252,12 +258,23 @@ impl TeamPool {
         todo!()
     }
 
-    fn break_by_overall_percent(&mut self) {
+    fn break_by_percent(&mut self, percent_type: &str) {
         match self.tied_teams.len() {
             tt if tt > 1 => {
                 let mut working_vec: Vec<(i32, u16)> = Vec::new();
                 for team_id in self.tied_teams.iter() {
-                    let percent = self.team_records.get(team_id).unwrap().overall_percent;
+                    let percent = match percent_type {
+                        t if t == "overall" => {
+                            self.team_records.get(team_id).unwrap().overall_percent
+                        }
+                        t if t == "division" => {
+                            self.team_records.get(team_id).unwrap().division_percent
+                        }
+                        t if t == "conference" => {
+                            self.team_records.get(team_id).unwrap().conference_percent
+                        }
+                        t => panic!("Invalid percent type {}", t),
+                    };
                     working_vec.push((team_id.clone(), percent.clone()));
                 }
                 working_vec.sort_by_key(|t| t.1);
@@ -275,6 +292,166 @@ impl TeamPool {
             }
             _ => {}
         }
+    }
+
+    fn break_by_head_to_head(&mut self) {
+        match self.tied_teams.len() {
+            tt if tt > 1 => {
+                let mut records: HashMap<i32, (u8, u8, u8)> = HashMap::new();
+                for team_id in &self.tied_teams {
+                    records.insert(team_id.clone(), (0, 0, 0));
+                }
+                for (_, game) in self.games.iter() {
+                    if self.tied_teams.contains(&game.home_team.team_id)
+                        && self.tied_teams.contains(&game.away_team.team_id)
+                    {
+                        match game.game_result {
+                            Some(GameResult::HomeWin) => {
+                                records.get_mut(&game.home_team.team_id).unwrap().0 += 1;
+                                records.get_mut(&game.away_team.team_id).unwrap().1 += 1;
+                            }
+                            Some(GameResult::AwayWin) => {
+                                records.get_mut(&game.home_team.team_id).unwrap().1 += 1;
+                                records.get_mut(&game.away_team.team_id).unwrap().0 += 1;
+                            }
+                            Some(GameResult::Tie) => {
+                                records.get_mut(&game.home_team.team_id).unwrap().2 += 1;
+                                records.get_mut(&game.away_team.team_id).unwrap().2 += 1;
+                            }
+                            None => panic!("Game has no result"),
+                        }
+                    }
+                }
+                let mut working_vec: Vec<(i32, u16)> = Vec::new();
+                for (team_id, record) in records {
+                    working_vec.push((
+                        team_id.clone(),
+                        Season::calculate_percent_from_tuple(record),
+                    ));
+                }
+                working_vec.sort_by_key(|t| t.1);
+                working_vec.reverse();
+
+                self.tied_teams = HashSet::new();
+                let max_pct = working_vec.get(0).unwrap().1;
+                for (team_id, pct) in working_vec {
+                    if pct == max_pct {
+                        self.tied_teams.insert(team_id.clone());
+                    } else {
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn break_by_common_games(&mut self) {
+        match self.tied_teams.len() {
+            tt if tt > 1 => {
+                let mut records: HashMap<i32, (u8, u8, u8)> = HashMap::new();
+                for team_id in &self.tied_teams {
+                    records.insert(team_id.clone(), (0, 0, 0));
+                }
+
+                let mut team_opponents: HashMap<i32, HashSet<i32>> = HashMap::new();
+                for team_id in &self.tied_teams {
+                    team_opponents.insert(team_id.clone(), HashSet::new());
+                }
+
+                for (_, game) in self.games.iter() {
+                    if self.tied_teams.contains(&game.home_team.team_id) {
+                        team_opponents
+                            .get_mut(&game.home_team.team_id)
+                            .unwrap()
+                            .insert(game.away_team.team_id.clone());
+                    } else if self.tied_teams.contains(&game.away_team.team_id) {
+                        team_opponents
+                            .get_mut(&game.away_team.team_id)
+                            .unwrap()
+                            .insert(game.home_team.team_id.clone());
+                    }
+                }
+
+                let mut set_vec: Vec<HashSet<i32>> = Vec::new();
+                for (_, team_opponents_set) in team_opponents.iter() {
+                    set_vec.push(team_opponents_set.clone());
+                }
+                let mut iter = team_opponents.iter();
+                let common_opponents = iter
+                    .next()
+                    .map(|(_, set)| {
+                        iter.fold(set.clone(), |set1, (_, set2)| {
+                            set1.intersection(&set2).cloned().collect()
+                        })
+                    })
+                    .unwrap();
+
+                for (_, game) in self.games.iter() {
+                    if self.tied_teams.contains(&game.home_team.team_id)
+                        && common_opponents.contains(&game.away_team.team_id)
+                    {
+                        match game.game_result {
+                            Some(GameResult::HomeWin) => {
+                                records.get_mut(&game.home_team.team_id).unwrap().0 += 1;
+                            }
+                            Some(GameResult::AwayWin) => {
+                                records.get_mut(&game.home_team.team_id).unwrap().1 += 1;
+                            }
+                            Some(GameResult::Tie) => {
+                                records.get_mut(&game.home_team.team_id).unwrap().2 += 1;
+                            }
+                            None => panic!("Game has no result"),
+                        }
+                    } else if common_opponents.contains(&game.home_team.team_id)
+                        && self.tied_teams.contains(&game.away_team.team_id)
+                    {
+                        match game.game_result {
+                            Some(GameResult::HomeWin) => {
+                                records.get_mut(&game.away_team.team_id).unwrap().1 += 1;
+                            }
+                            Some(GameResult::AwayWin) => {
+                                records.get_mut(&game.away_team.team_id).unwrap().0 += 1;
+                            }
+                            Some(GameResult::Tie) => {
+                                records.get_mut(&game.away_team.team_id).unwrap().2 += 1;
+                            }
+                            None => panic!("Game has no result"),
+                        }
+                    }
+                }
+
+                let mut working_vec: Vec<(i32, u16)> = Vec::new();
+                for (team_id, record) in records {
+                    working_vec.push((
+                        team_id.clone(),
+                        Season::calculate_percent_from_tuple(record),
+                    ));
+                }
+                working_vec.sort_by_key(|t| t.1);
+                working_vec.reverse();
+
+                self.tied_teams = HashSet::new();
+                let max_pct = working_vec.get(0).unwrap().1;
+                for (team_id, pct) in working_vec {
+                    if pct == max_pct {
+                        self.tied_teams.insert(team_id.clone());
+                    } else {
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn break_by_random(&mut self) {
+        let tied_teams_vec: Vec<i32> = Vec::from_iter(self.tied_teams.clone());
+        let mut rng: rand::rngs::ThreadRng = rand::thread_rng();
+        let index = rng.gen_range(0..tied_teams_vec.len());
+        let winner = tied_teams_vec.get(index).unwrap().clone();
+        self.tied_teams = HashSet::new();
+        self.tied_teams.insert(winner);
     }
 }
 
@@ -475,7 +652,7 @@ impl Season {
         }
     }
 
-    fn calculate_percent_from_tuple(record_tuple: (u8, u8, u8)) -> u16 {
+    pub fn calculate_percent_from_tuple(record_tuple: (u8, u8, u8)) -> u16 {
         let (wins, losses, ties) = record_tuple;
         let wins: u32 = u32::from(wins);
         let losses: u32 = u32::from(losses);
@@ -498,244 +675,6 @@ impl Season {
                 .division_winners
                 .insert(team_pool.winner.unwrap());
         }
-    }
-
-    fn _evaluate_divisions(&mut self) {
-        for (_, team_ids) in self.division_mapping.iter_mut() {
-            let mut working_vec: Vec<(i32, (u16, u16, u16))> = Vec::new();
-            for team_id in team_ids {
-                let team_record = self
-                    .current_simulation_result
-                    .team_records
-                    .get(team_id)
-                    .unwrap();
-                let team_pcts = (
-                    team_id.clone(),
-                    (
-                        team_record.overall_percent.clone(),
-                        team_record.conference_percent.clone(),
-                        team_record.division_percent.clone(),
-                    ),
-                );
-                working_vec.push(team_pcts);
-            }
-            working_vec.sort_by_key(|t| t.1 .0);
-            working_vec.reverse();
-
-            let max_pct = working_vec.get(0).unwrap().1 .0;
-            let mut tied_teams = HashSet::new();
-            for (team_id, pcts) in &working_vec {
-                if pcts.0 == max_pct {
-                    tied_teams.insert(team_id.clone());
-                } else {
-                    break;
-                }
-            }
-
-            if tied_teams.len() > 1 {
-                tied_teams = Self::evaluate_head_to_head(
-                    tied_teams.clone(),
-                    self.current_simulation_games.clone(),
-                );
-            }
-            if tied_teams.len() > 1 {
-                tied_teams = Self::evaluate_division_records(
-                    tied_teams.clone(),
-                    self.current_simulation_result.team_records.clone(),
-                );
-            }
-            if tied_teams.len() > 1 {
-                tied_teams = Self::evaluate_common_games(
-                    tied_teams.clone(),
-                    self.current_simulation_games.clone(),
-                );
-            }
-            if tied_teams.len() > 1 {
-                tied_teams = Self::pick_random_team_from_tied(tied_teams.clone());
-            }
-
-            let tied_teams = Vec::from_iter(tied_teams);
-            let division_winner: i32 = tied_teams.first().unwrap().clone();
-
-            self.current_simulation_result
-                .division_winners
-                .insert(division_winner);
-        }
-    }
-
-    fn evaluate_division_records(
-        tied_teams: HashSet<i32>,
-        records: HashMap<i32, TeamRecord>,
-    ) -> HashSet<i32> {
-        let mut working_vec: Vec<(i32, u16)> = Vec::new();
-        for team_id in tied_teams.iter() {
-            working_vec.push((
-                team_id.clone(),
-                records.get(&team_id).unwrap().division_percent.clone(),
-            ));
-        }
-        working_vec.sort_by_key(|t| t.1);
-        working_vec.reverse();
-
-        let mut remaining_tied_teams: HashSet<i32> = HashSet::new();
-        let max_pct = working_vec.get(0).unwrap().1;
-        for (team_id, pct) in working_vec {
-            if pct == max_pct {
-                remaining_tied_teams.insert(team_id.clone());
-            } else {
-                break;
-            }
-        }
-        remaining_tied_teams
-    }
-
-    fn evaluate_head_to_head(tied_teams: HashSet<i32>, games: HashMap<i32, Game>) -> HashSet<i32> {
-        let mut records: HashMap<i32, (u8, u8, u8)> = HashMap::new();
-        for team_id in &tied_teams {
-            records.insert(team_id.clone(), (0, 0, 0));
-        }
-        for (_, game) in games.iter() {
-            if tied_teams.contains(&game.home_team.team_id)
-                && tied_teams.contains(&game.away_team.team_id)
-            {
-                match game.game_result {
-                    Some(GameResult::HomeWin) => {
-                        records.get_mut(&game.home_team.team_id).unwrap().0 += 1;
-                        records.get_mut(&game.away_team.team_id).unwrap().1 += 1;
-                    }
-                    Some(GameResult::AwayWin) => {
-                        records.get_mut(&game.home_team.team_id).unwrap().1 += 1;
-                        records.get_mut(&game.away_team.team_id).unwrap().0 += 1;
-                    }
-                    Some(GameResult::Tie) => {
-                        records.get_mut(&game.home_team.team_id).unwrap().2 += 1;
-                        records.get_mut(&game.away_team.team_id).unwrap().2 += 1;
-                    }
-                    None => panic!("Game has no result"),
-                }
-            }
-        }
-        let mut working_vec: Vec<(i32, u16)> = Vec::new();
-        for (team_id, record) in records {
-            working_vec.push((team_id.clone(), Self::calculate_percent_from_tuple(record)));
-        }
-        working_vec.sort_by_key(|t| t.1);
-        working_vec.reverse();
-
-        let mut remaining_tied_teams: HashSet<i32> = HashSet::new();
-        let max_pct = working_vec.get(0).unwrap().1;
-        for (team_id, pct) in working_vec {
-            if pct == max_pct {
-                remaining_tied_teams.insert(team_id.clone());
-            } else {
-                break;
-            }
-        }
-
-        remaining_tied_teams
-    }
-
-    fn evaluate_common_games(tied_teams: HashSet<i32>, games: HashMap<i32, Game>) -> HashSet<i32> {
-        let mut records: HashMap<i32, (u8, u8, u8)> = HashMap::new();
-        for team_id in &tied_teams {
-            records.insert(team_id.clone(), (0, 0, 0));
-        }
-
-        let mut team_opponents: HashMap<i32, HashSet<i32>> = HashMap::new();
-        for team_id in &tied_teams {
-            team_opponents.insert(team_id.clone(), HashSet::new());
-        }
-        for (_, game) in games.iter() {
-            if tied_teams.contains(&game.home_team.team_id) {
-                team_opponents
-                    .get_mut(&game.home_team.team_id)
-                    .unwrap()
-                    .insert(game.away_team.team_id.clone());
-            } else if tied_teams.contains(&game.away_team.team_id) {
-                team_opponents
-                    .get_mut(&game.away_team.team_id)
-                    .unwrap()
-                    .insert(game.home_team.team_id.clone());
-            }
-        }
-
-        let mut set_vec: Vec<HashSet<i32>> = Vec::new();
-        for (_, team_opponents_set) in team_opponents.iter() {
-            set_vec.push(team_opponents_set.clone());
-        }
-        let mut iter = set_vec.iter();
-        let common_opponents = iter
-            .next()
-            .map(|set| {
-                iter.fold(set.clone(), |set1, set2| {
-                    set1.intersection(&set2).cloned().collect()
-                })
-            })
-            .unwrap();
-
-        for (_, game) in games.iter() {
-            if tied_teams.contains(&game.home_team.team_id)
-                && common_opponents.contains(&game.away_team.team_id)
-            {
-                match game.game_result {
-                    Some(GameResult::HomeWin) => {
-                        records.get_mut(&game.home_team.team_id).unwrap().0 += 1;
-                    }
-                    Some(GameResult::AwayWin) => {
-                        records.get_mut(&game.home_team.team_id).unwrap().1 += 1;
-                    }
-                    Some(GameResult::Tie) => {
-                        records.get_mut(&game.home_team.team_id).unwrap().2 += 1;
-                    }
-                    None => panic!("Game has no result"),
-                }
-            } else if common_opponents.contains(&game.home_team.team_id)
-                && tied_teams.contains(&game.away_team.team_id)
-            {
-                match game.game_result {
-                    Some(GameResult::HomeWin) => {
-                        records.get_mut(&game.away_team.team_id).unwrap().1 += 1;
-                    }
-                    Some(GameResult::AwayWin) => {
-                        records.get_mut(&game.away_team.team_id).unwrap().0 += 1;
-                    }
-                    Some(GameResult::Tie) => {
-                        records.get_mut(&game.away_team.team_id).unwrap().2 += 1;
-                    }
-                    None => panic!("Game has no result"),
-                }
-            }
-        }
-
-        let mut working_vec: Vec<(i32, u16)> = Vec::new();
-        for (team_id, record) in records {
-            working_vec.push((team_id.clone(), Self::calculate_percent_from_tuple(record)));
-        }
-        working_vec.sort_by_key(|t| t.1);
-        working_vec.reverse();
-
-        let mut remaining_tied_teams: HashSet<i32> = HashSet::new();
-        let max_pct = working_vec.get(0).unwrap().1;
-        for (team_id, pct) in working_vec {
-            if pct == max_pct {
-                remaining_tied_teams.insert(team_id.clone());
-            } else {
-                break;
-            }
-        }
-
-        remaining_tied_teams
-    }
-
-    fn pick_random_team_from_tied(tied_teams: HashSet<i32>) -> HashSet<i32> {
-        let tied_teams_vec: Vec<i32> = Vec::from_iter(tied_teams.clone());
-        let mut rng: rand::rngs::ThreadRng = rand::thread_rng();
-        let index = rng.gen_range(0..tied_teams_vec.len());
-        let winner = tied_teams_vec.get(index).unwrap().clone();
-
-        let mut tied_teams = HashSet::new();
-        tied_teams.insert(winner);
-        tied_teams
     }
 
     fn increment_overall_results(&mut self) {
