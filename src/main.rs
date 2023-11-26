@@ -8,8 +8,8 @@ mod migrations;
 fn main() {
     migrations::rebuild();
     // migrations::destroy();
-    // let season_year: i32 = 2023;
-    // let mut season: Season = Season::new_from_year(season_year);
+    let season_year: i32 = 2023;
+    let mut season: Season = Season::new_from_year(season_year);
 
     // season.set_simulation_id(1000);
 
@@ -24,26 +24,7 @@ fn main() {
     //     season.current_simulation_result.team_records.get(&26)
     // );
 
-    // run_all_game_simulations(season_year, 1000);
-}
-
-#[allow(dead_code)]
-fn run_all_game_simulations(season_year: i32, sims: u64) {
-    let mut season: Season = Season::new_from_year(season_year);
-    let games = season.actual_games.clone();
-    for (game_id, _) in tqdm!(games.iter()) {
-        let actual_game: Game = season.actual_games.get(game_id).unwrap().clone();
-        match actual_game.game_result {
-            Some(_) => {}
-            None => {
-                season.simulate_for_game(game_id.clone(), GameResult::HomeWin, sims);
-                season.simulate_for_game(game_id.clone(), GameResult::AwayWin, sims);
-                season.simulate_for_game(game_id.clone(), GameResult::Tie, sims);
-            }
-        }
-    }
-
-    println!("{:#?}", season.overall_results);
+    season.run_all_game_simulations(10000);
 }
 
 #[allow(dead_code)]

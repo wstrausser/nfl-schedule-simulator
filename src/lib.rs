@@ -171,7 +171,6 @@ pub struct SimulationResultLookup {
 
 #[derive(Debug)]
 pub struct TeamSimulationResults {
-    pub sims_run: u64,
     pub made_playoffs: i32,
     pub playoff_seedings: Vec<i32>,
     pub division_winner: i32,
@@ -182,7 +181,6 @@ pub struct TeamSimulationResults {
 impl TeamSimulationResults {
     fn new() -> TeamSimulationResults {
         TeamSimulationResults {
-            sims_run: 0,
             made_playoffs: 0,
             playoff_seedings: Vec::new(),
             division_winner: 0,
@@ -193,7 +191,6 @@ impl TeamSimulationResults {
 
     fn new_with_sims(sims_run: u64) -> TeamSimulationResults {
         TeamSimulationResults {
-            sims_run: sims_run,
             made_playoffs: 0,
             playoff_seedings: Vec::new(),
             division_winner: 0,
@@ -243,7 +240,7 @@ impl Season {
     pub fn run_all_game_simulations(&mut self, sims: u64) {
         self.set_simulation_id(sims.clone());
         let games = self.actual_games.clone();
-        for (game_id, _) in tqdm!(games.iter()) {
+        for (game_id, _) in tqdm!(games.iter(), desc = "Overall progress", position = 0) {
             let actual_game: Game = self.actual_games.get(game_id).unwrap().clone();
             match actual_game.game_result {
                 Some(_) => {}
@@ -254,6 +251,7 @@ impl Season {
                 }
             }
         }
+        self.insert_results();
     }
 
     pub fn simulate_for_game(&mut self, game_id: i32, game_result: GameResult, sims: u64) {
@@ -276,7 +274,11 @@ impl Season {
             );
         }
 
-        for _ in 0..sims {
+        for _ in tqdm!(
+            0..sims,
+            desc = format!("Running simulations for: {game_id}, {:?}", game_result),
+            position = 1
+        ) {
             self.run_simulation();
         }
     }
@@ -289,7 +291,6 @@ impl Season {
             game.simulate_if_undecided();
         }
         self.evaluate_simulation_results();
-        self.insert_results();
     }
 
     fn evaluate_simulation_results(&mut self) {
@@ -770,9 +771,35 @@ impl Season {
         }
     }
 
-    fn insert_results(&mut self) {
+    fn insert_results(&self) {
         // Insert all results in self.overall_results into database
-        todo!()
+        println!("Inserting results...");
+        let mut new_rows: Vec<String> = Vec::new();
+        for (lookup, result) in self.overall_results.iter() {
+            let simulation_id = self.simulation_id.unwrap();
+            let game_id = lookup.game_id;
+            let simulated_game_result = match lookup.game_result {
+                GameResult::HomeWin => String::from("home win"),
+                GameResult::AwayWin => String::from("away win"),
+                GameResult::Tie => String::from("tie"),
+            };
+            let simulation_team_id = lookup.team_id;
+            let mut results: HashMap<String, i32> = HashMap::new();
+            results.insert(String::from("division winner"), result.division_winner);
+
+            for (season_outcome, simulations_with_outcome) in results.iter() {
+                let new_row: String = format!(
+                    "(DEFAULT,{simulation_id},{game_id},'{simulated_game_result}',{simulation_team_id},'{season_outcome}',{simulations_with_outcome})",
+                );
+                new_rows.push(new_row);
+            }
+        }
+        let statement: String = format!(
+            "INSERT INTO nfl.simulation_results
+            VALUES {}",
+            new_rows.join(","),
+        );
+        execute(statement);
     }
 }
 
