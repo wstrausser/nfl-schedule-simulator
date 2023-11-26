@@ -188,16 +188,6 @@ impl TeamSimulationResults {
             draft_picks: Vec::new(),
         }
     }
-
-    fn new_with_sims(sims_run: u64) -> TeamSimulationResults {
-        TeamSimulationResults {
-            made_playoffs: 0,
-            playoff_seedings: Vec::new(),
-            division_winner: 0,
-            wildcard_team: 0,
-            draft_picks: Vec::new(),
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -268,10 +258,8 @@ impl Season {
                 game_result: game_result.clone(),
                 team_id: team_id.clone(),
             };
-            self.overall_results.insert(
-                new_lookup,
-                TeamSimulationResults::new_with_sims(sims.clone()),
-            );
+            self.overall_results
+                .insert(new_lookup, TeamSimulationResults::new());
         }
 
         for _ in tqdm!(
@@ -306,7 +294,7 @@ impl Season {
                 .team_records
                 .insert(team_id.clone(), TeamRecord::new());
         }
-        for (game_id, game) in self.current_simulation_games.iter() {
+        for (_, game) in self.current_simulation_games.iter() {
             let (winning_team, losing_team): (Option<i32>, Option<i32>) = {
                 if game.game_result == Some(GameResult::HomeWin) {
                     (
@@ -391,7 +379,7 @@ impl Season {
     }
 
     fn calculate_percentages(&mut self) {
-        for (team_id, record) in self.current_simulation_result.team_records.iter_mut() {
+        for (_, record) in self.current_simulation_result.team_records.iter_mut() {
             record.overall_percent = Self::calculate_percent_from_tuple(record.overall_record);
             record.conference_percent =
                 Self::calculate_percent_from_tuple(record.conference_record);
@@ -400,7 +388,7 @@ impl Season {
     }
 
     fn calculate_percent_from_tuple(record_tuple: (u8, u8, u8)) -> u16 {
-        let (wins, mut losses, mut ties) = record_tuple;
+        let (wins, losses, ties) = record_tuple;
         let wins: u32 = u32::from(wins);
         let losses: u32 = u32::from(losses);
         let ties: u32 = u32::from(ties);
@@ -410,7 +398,7 @@ impl Season {
     }
 
     fn evaluate_divisions(&mut self) {
-        for (division, team_ids) in self.division_mapping.iter_mut() {
+        for (_, team_ids) in self.division_mapping.iter_mut() {
             let mut working_vec: Vec<(i32, (u16, u16, u16))> = Vec::new();
             for team_id in team_ids {
                 let team_record = self

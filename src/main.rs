@@ -1,4 +1,3 @@
-use kdam::tqdm;
 use nfl_schedule_simulator::*;
 use std::io::Write;
 use std::time::Instant;
@@ -9,11 +8,11 @@ fn main() {
     // migrations::rebuild();
     // migrations::destroy();
     let season_year: i32 = 2023;
-    let mut season: Season = Season::new_from_year(season_year);
+    let season: Season = Season::new_from_year(season_year);
 
     // season.set_simulation_id(1000);
 
-    // println!("{:#?}", season);
+    println!("{:#?}", season);
 
     // season.run_simulation();
 

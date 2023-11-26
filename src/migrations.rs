@@ -2,17 +2,18 @@ use nfl_schedule_simulator::execute;
 use std::fs::File;
 use std::io::prelude::*;
 
+#[allow(dead_code)]
+pub fn rebuild() {
+    destroy();
+    create();
+}
+
 pub fn create() {
     execute_sql_file("migrations/up.sql");
 }
 
 pub fn destroy() {
     execute_sql_file("migrations/down.sql");
-}
-
-pub fn rebuild() {
-    destroy();
-    create();
 }
 
 fn execute_sql_file(file_path: &str) {
