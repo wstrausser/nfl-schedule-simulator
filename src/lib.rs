@@ -191,6 +191,94 @@ impl TeamSimulationResults {
 }
 
 #[derive(Debug)]
+pub enum PoolType {
+    Division,
+    Wildcard,
+    DraftOrder,
+    PlayoffSeeding,
+}
+
+#[derive(Debug)]
+pub struct TeamPool {
+    pub pool_type: PoolType,
+    pub teams: HashSet<i32>,
+    pub tied_teams: HashSet<i32>,
+    pub winner: Option<i32>,
+    pub ranking: Option<Vec<i32>>,
+    pub team_records: HashMap<i32, TeamRecord>,
+    pub games: HashMap<i32, Game>,
+}
+
+impl TeamPool {
+    pub fn new(
+        source_vec: Vec<i32>,
+        pool_type: PoolType,
+        team_records: &HashMap<i32, TeamRecord>,
+        games: &HashMap<i32, Game>,
+    ) -> TeamPool {
+        TeamPool {
+            pool_type,
+            teams: HashSet::from_iter(source_vec.clone()),
+            tied_teams: HashSet::from_iter(source_vec.clone()),
+            winner: None,
+            ranking: None,
+            team_records: team_records.clone(),
+            games: games.clone(),
+        }
+    }
+
+    pub fn evaluate(&mut self) {
+        match self.pool_type {
+            PoolType::Division => self.evaluate_division(),
+            PoolType::Wildcard => self.evaluate_wildcard(),
+            PoolType::DraftOrder => self.evaluate_draft_order(),
+            PoolType::PlayoffSeeding => self.evaluate_playoff_seeding(),
+        }
+    }
+
+    fn evaluate_division(&mut self) {
+        self.break_by_overall_percent();
+    }
+
+    fn evaluate_wildcard(&mut self) {
+        todo!()
+    }
+
+    fn evaluate_draft_order(&mut self) {
+        todo!()
+    }
+
+    fn evaluate_playoff_seeding(&mut self) {
+        todo!()
+    }
+
+    fn break_by_overall_percent(&mut self) {
+        match self.tied_teams.len() {
+            tt if tt > 1 => {
+                let mut working_vec: Vec<(i32, u16)> = Vec::new();
+                for team_id in self.tied_teams.iter() {
+                    let percent = self.team_records.get(team_id).unwrap().overall_percent;
+                    working_vec.push((team_id.clone(), percent.clone()));
+                }
+                working_vec.sort_by_key(|t| t.1);
+                working_vec.reverse();
+
+                let max_pct = working_vec.get(0).unwrap().1;
+                self.tied_teams = HashSet::new();
+                for (team_id, percent) in &working_vec {
+                    if percent == &max_pct {
+                        self.tied_teams.insert(team_id.clone());
+                    } else {
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct Season {
     pub season_year: i32,
     pub teams: HashMap<i32, Team>,
@@ -398,6 +486,21 @@ impl Season {
     }
 
     fn evaluate_divisions(&mut self) {
+        for (_, team_ids) in self.division_mapping.iter_mut() {
+            let mut team_pool: TeamPool = TeamPool::new(
+                team_ids.clone(),
+                PoolType::Division,
+                &self.current_simulation_result.team_records,
+                &self.current_simulation_games,
+            );
+            team_pool.evaluate();
+            self.current_simulation_result
+                .division_winners
+                .insert(team_pool.winner.unwrap());
+        }
+    }
+
+    fn _evaluate_divisions(&mut self) {
         for (_, team_ids) in self.division_mapping.iter_mut() {
             let mut working_vec: Vec<(i32, (u16, u16, u16))> = Vec::new();
             for team_id in team_ids {
