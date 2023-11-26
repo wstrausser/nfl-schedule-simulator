@@ -23,7 +23,7 @@ fn main() {
     //     season.current_simulation_result.team_records.get(&26)
     // );
 
-    season.run_all_game_simulations(100000);
+    season.run_all_game_simulations(1000);
 }
 
 #[allow(dead_code)]

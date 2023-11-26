@@ -1,4 +1,4 @@
-use kdam::tqdm;
+use chrono;
 use postgres::{Client, NoTls, Row};
 use rand::Rng;
 use std::collections::{HashMap, HashSet};
@@ -493,13 +493,28 @@ impl Season {
     pub fn run_all_game_simulations(&mut self, sims: u64) {
         self.set_simulation_id(sims.clone());
         let games = self.actual_games.clone();
-        for (game_id, _) in tqdm!(games.iter(), desc = "Overall progress", position = 0) {
+        let total_games = games.len();
+        let mut i: u32 = 1;
+        for (game_id, _) in games.iter() {
+            println!(
+                "\n{} - Processing game {} of {} (id: {})...",
+                now(),
+                i,
+                total_games,
+                game_id
+            );
+            i += 1;
             let actual_game: Game = self.actual_games.get(game_id).unwrap().clone();
             match actual_game.game_result {
                 Some(_) => {}
                 None => {
+                    println!("{} - Simulating home win...", now());
                     self.simulate_for_game(game_id.clone(), GameResult::HomeWin, sims);
+
+                    println!("{} - Simulating away win...", now());
                     self.simulate_for_game(game_id.clone(), GameResult::AwayWin, sims);
+
+                    println!("{} - Simulating tie...", now());
                     self.simulate_for_game(game_id.clone(), GameResult::Tie, sims);
                 }
             }
@@ -525,11 +540,7 @@ impl Season {
                 .insert(new_lookup, TeamSimulationResults::new());
         }
 
-        for _ in tqdm!(
-            0..sims,
-            desc = format!("Running simulations for: {game_id}, {:?}", game_result),
-            position = 1
-        ) {
+        for _ in 0..sims {
             self.run_simulation();
         }
     }
@@ -872,4 +883,10 @@ pub fn execute(statement: String) {
             statement, e
         ),
     };
+}
+
+pub fn now() -> String {
+    let time = chrono::offset::Local::now();
+
+    time.format("%Y-%m-%d %H:%M:%S%.3f").to_string()
 }
