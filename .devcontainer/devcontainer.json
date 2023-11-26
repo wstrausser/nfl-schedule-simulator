@@ -1,6 +1,9 @@
 {
     "name": "NFL Season Simulator",
     "image": "mcr.microsoft.com/devcontainers/rust:latest",
+    "runArgs": [
+		"--env-file", "${localWorkspaceFolder}/.env"
+	],
     "mounts": [
         "source=${localEnv:HOME}/.ssh,target=/vscode/.ssh,type=bind,consistency=cached"
     ],

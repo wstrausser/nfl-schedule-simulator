@@ -1,4 +1,3 @@
-use dotenv::dotenv;
 use kdam::tqdm;
 use postgres::{Client, NoTls, Row};
 use rand::Rng;
@@ -838,8 +837,6 @@ fn get_variable(key: &str) -> String {
 }
 
 fn get_conn_string() -> String {
-    dotenv().ok();
-
     let pg_locn: String = get_variable("PG_LOCN");
     let pg_dtbs: String = get_variable("PG_DTBS");
     let pg_user: String = get_variable("PG_USER");
