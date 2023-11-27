@@ -541,26 +541,29 @@ impl Season {
         }
 
         for _ in 0..sims {
-            self.run_simulation();
+            self.run_simulation(true);
         }
     }
 
-    pub fn run_simulation(&mut self) {
+    pub fn run_simulation(&mut self, increment: bool) {
         self.current_simulation_result = CurrentSimulationResult::new();
         self.current_simulation_games = self.current_simulation_base_games.clone();
         for game_item in self.current_simulation_games.iter_mut() {
             let game: &mut Game = game_item.1;
             game.simulate_if_undecided();
         }
-        self.evaluate_simulation_results();
+        self.evaluate_simulation_results(increment);
     }
 
-    fn evaluate_simulation_results(&mut self) {
+    fn evaluate_simulation_results(&mut self, increment: bool) {
         self.populate_records();
         self.calculate_percentages();
         self.evaluate_divisions();
         self.evaluate_wildcards();
-        self.increment_overall_results();
+        match increment {
+            true => self.increment_overall_results(),
+            false => {}
+        };
     }
 
     fn populate_records(&mut self) {

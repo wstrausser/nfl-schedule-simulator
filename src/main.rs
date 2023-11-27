@@ -8,7 +8,7 @@ fn main() {
     // migrations::rebuild();
     // migrations::destroy();
     let season_year: i32 = 2023;
-    let mut season: Season = Season::new_from_year(season_year);
+    // let mut season: Season = Season::new_from_year(season_year);
 
     // season.set_simulation_id(1000);
 
@@ -23,7 +23,9 @@ fn main() {
     //     season.current_simulation_result.team_records.get(&26)
     // );
 
-    season.run_all_game_simulations(1000);
+    // season.run_all_game_simulations(1000);
+
+    run_timed_simulations(season_year, 100000)
 }
 
 #[allow(dead_code)]
@@ -32,7 +34,7 @@ fn run_timed_simulations(season_year: i32, sims: i32) {
 
     let now: Instant = Instant::now();
     for i in 0..sims {
-        season.run_simulation();
+        season.run_simulation(false);
         print!("\r{i}");
         std::io::stdout()
             .flush()
