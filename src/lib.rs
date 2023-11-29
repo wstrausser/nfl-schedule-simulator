@@ -238,14 +238,44 @@ impl TeamPool {
         self.break_by_percent("overall");
         self.break_by_percent("division");
         self.break_by_head_to_head();
-        self.break_by_common_games();
+        self.break_by_common_games(0);
         self.break_by_percent("conference");
         self.break_by_random();
         self.winner = Some(self.tied_teams.iter().next().unwrap().clone());
     }
 
     fn evaluate_wildcard(&mut self) {
-        todo!()
+        self.ranking = Some(Vec::new());
+        for _ in 0..3 {
+            self.break_by_percent("overall");
+            if self.tied_teams.len() > 2 {
+                self.break_wildcard_division_ties();
+            }
+            if self.tied_teams.len() > 2 {
+                self.break_by_head_to_head_sweep();
+            }
+            if self.tied_teams.len() > 2 {
+                self.break_by_percent("conference");
+            }
+            if self.tied_teams.len() > 2 {
+                self.break_by_common_games(4);
+            }
+            if self.tied_teams.len() > 2 {
+                self.pick_two_random();
+            }
+
+            self.break_by_head_to_head();
+            self.break_by_percent("conference");
+            self.break_by_common_games(4);
+            self.break_by_random();
+
+            let top_team = self.tied_teams.iter().next().unwrap().clone();
+            self.ranking.as_mut().unwrap().push(top_team);
+            self.tied_teams = self.teams.clone();
+            for team_id in self.ranking.as_ref().unwrap() {
+                self.tied_teams.remove(team_id);
+            }
+        }
     }
 
     fn evaluate_draft_order(&mut self) {
@@ -254,6 +284,115 @@ impl TeamPool {
 
     fn evaluate_playoff_seeding(&mut self) {
         todo!()
+    }
+
+    fn break_by_head_to_head_sweep(&mut self) {
+        match self.tied_teams.len() {
+            tt if tt > 1 => {
+                let mut records: HashMap<i32, (u8, u8, u8)> = HashMap::new();
+                for team_id in &self.tied_teams {
+                    records.insert(team_id.clone(), (0, 0, 0));
+                }
+                for (_, game) in self.games.iter() {
+                    if self.tied_teams.contains(&game.home_team.team_id)
+                        && self.tied_teams.contains(&game.away_team.team_id)
+                    {
+                        match game.game_result {
+                            Some(GameResult::HomeWin) => {
+                                records.get_mut(&game.home_team.team_id).unwrap().0 += 1;
+                                records.get_mut(&game.away_team.team_id).unwrap().1 += 1;
+                            }
+                            Some(GameResult::AwayWin) => {
+                                records.get_mut(&game.home_team.team_id).unwrap().1 += 1;
+                                records.get_mut(&game.away_team.team_id).unwrap().0 += 1;
+                            }
+                            Some(GameResult::Tie) => {
+                                records.get_mut(&game.home_team.team_id).unwrap().2 += 1;
+                                records.get_mut(&game.away_team.team_id).unwrap().2 += 1;
+                            }
+                            None => panic!("Game has no result"),
+                        }
+                    }
+                }
+                let mut sweeper: Option<i32> = None;
+                let mut swept: HashSet<i32> = HashSet::new();
+                for (team_id, record) in records {
+                    if record.1 == 0 && record.2 == 0 {
+                        sweeper = Some(team_id);
+                    } else if record.0 == 0 && record.2 == 0 {
+                        swept.insert(team_id);
+                    }
+                }
+
+                let mut new_tied_teams: HashSet<i32> = HashSet::new();
+                match sweeper {
+                    Some(team_id) => {
+                        new_tied_teams.insert(team_id);
+                    }
+                    None => {
+                        for team_id in self.tied_teams.iter() {
+                            if !swept.contains(team_id) {
+                                new_tied_teams.insert(team_id.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn break_wildcard_division_ties(&mut self) {
+        match self.tied_teams.len() {
+            tt if tt > 1 => {
+                let mut tied_team_divisions: HashMap<String, HashSet<i32>> = HashMap::new();
+                for team_id in self.tied_teams.iter() {
+                    let team_division = self.get_team_division(team_id).unwrap();
+                    if tied_team_divisions.contains_key(&team_division) {
+                        tied_team_divisions
+                            .get_mut(&team_division)
+                            .unwrap()
+                            .insert(team_id.clone());
+                    } else {
+                        let mut new_set: HashSet<i32> = HashSet::new();
+                        new_set.insert(team_id.clone());
+                        tied_team_divisions.insert(team_division, new_set);
+                    }
+                }
+
+                let mut division_winners: HashSet<i32> = HashSet::new();
+                for (_, teams) in tied_team_divisions.iter() {
+                    if teams.len() > 1 {
+                        let mut division_pool = self.clone();
+                        division_pool.pool_type = PoolType::Division;
+                        division_pool.teams = teams.clone();
+                        division_pool.tied_teams = teams.clone();
+                        division_pool.evaluate();
+                        division_winners.insert(division_pool.winner.unwrap());
+                    } else if teams.len() == 1 {
+                        for team in teams.iter() {
+                            division_winners.insert(team.clone());
+                        }
+                    } else {
+                        panic!("Division has no teams associated")
+                    }
+                }
+
+                self.tied_teams = division_winners;
+            }
+            _ => {}
+        }
+    }
+
+    fn get_team_division(&self, team_id: &i32) -> Option<String> {
+        let mut team_division: Option<String> = None;
+        for (division, teams) in self.division_mapping.iter() {
+            if teams.contains(team_id) {
+                team_division = Some(division.clone());
+                break;
+            }
+        }
+        team_division
     }
 
     fn break_by_percent(&mut self, percent_type: &str) {
@@ -344,7 +483,7 @@ impl TeamPool {
         }
     }
 
-    fn break_by_common_games(&mut self) {
+    fn break_by_common_games(&mut self, min_games: u8) {
         match self.tied_teams.len() {
             tt if tt > 1 => {
                 let mut records: HashMap<i32, (u8, u8, u8)> = HashMap::new();
@@ -385,10 +524,12 @@ impl TeamPool {
                     })
                     .unwrap();
 
+                let mut total_common_games = 0;
                 for (_, game) in self.games.iter() {
                     if self.tied_teams.contains(&game.home_team.team_id)
                         && common_opponents.contains(&game.away_team.team_id)
                     {
+                        total_common_games += 1;
                         match game.game_result {
                             Some(GameResult::HomeWin) => {
                                 records.get_mut(&game.home_team.team_id).unwrap().0 += 1;
@@ -404,6 +545,7 @@ impl TeamPool {
                     } else if common_opponents.contains(&game.home_team.team_id)
                         && self.tied_teams.contains(&game.away_team.team_id)
                     {
+                        total_common_games += 1;
                         match game.game_result {
                             Some(GameResult::HomeWin) => {
                                 records.get_mut(&game.away_team.team_id).unwrap().1 += 1;
@@ -419,24 +561,29 @@ impl TeamPool {
                     }
                 }
 
-                let mut working_vec: Vec<(i32, u16)> = Vec::new();
-                for (team_id, record) in records {
-                    working_vec.push((
-                        team_id.clone(),
-                        Season::calculate_percent_from_tuple(record),
-                    ));
-                }
-                working_vec.sort_by_key(|t| t.1);
-                working_vec.reverse();
+                match total_common_games {
+                    tcg if tcg > min_games => {
+                        let mut working_vec: Vec<(i32, u16)> = Vec::new();
+                        for (team_id, record) in records {
+                            working_vec.push((
+                                team_id.clone(),
+                                Season::calculate_percent_from_tuple(record),
+                            ));
+                        }
+                        working_vec.sort_by_key(|t| t.1);
+                        working_vec.reverse();
 
-                self.tied_teams = HashSet::new();
-                let max_pct = working_vec.get(0).unwrap().1;
-                for (team_id, pct) in working_vec {
-                    if pct == max_pct {
-                        self.tied_teams.insert(team_id.clone());
-                    } else {
-                        break;
+                        self.tied_teams = HashSet::new();
+                        let max_pct = working_vec.get(0).unwrap().1;
+                        for (team_id, pct) in working_vec {
+                            if pct == max_pct {
+                                self.tied_teams.insert(team_id.clone());
+                            } else {
+                                break;
+                            }
+                        }
                     }
+                    _ => {}
                 }
             }
             _ => {}
@@ -450,6 +597,22 @@ impl TeamPool {
         let winner = tied_teams_vec.get(index).unwrap().clone();
         self.tied_teams = HashSet::new();
         self.tied_teams.insert(winner);
+    }
+
+    fn pick_two_random(&mut self) {
+        let mut tied_teams_vec: Vec<i32> = Vec::from_iter(self.tied_teams.clone());
+        let mut rng: rand::rngs::ThreadRng = rand::thread_rng();
+        let index = rng.gen_range(0..tied_teams_vec.len());
+        let winner1 = tied_teams_vec.get(index).unwrap().clone();
+
+        tied_teams_vec.retain(|team_id| team_id != &winner1);
+        let mut rng: rand::rngs::ThreadRng = rand::thread_rng();
+        let index = rng.gen_range(0..tied_teams_vec.len());
+        let winner2 = tied_teams_vec.get(index).unwrap().clone();
+
+        self.tied_teams = HashSet::new();
+        self.tied_teams.insert(winner1);
+        self.tied_teams.insert(winner2);
     }
 }
 
@@ -672,7 +835,18 @@ impl Season {
         let ties: u32 = u32::from(ties);
         let computed_wins: u32 = (wins * 1000) + ((ties * 1000) / 2);
 
-        u16::try_from(computed_wins / (wins + losses + ties)).unwrap()
+        let total_games = wins + losses + ties;
+        let win_percent: u16;
+        match total_games {
+            tg if tg != 0 => {
+                win_percent = u16::try_from(computed_wins / (wins + losses + ties)).unwrap();
+            }
+            _ => {
+                win_percent = 0;
+            }
+        }
+
+        win_percent
     }
 
     fn evaluate_divisions(&mut self) {
@@ -685,7 +859,26 @@ impl Season {
         }
     }
 
-    fn evaluate_wildcards(&mut self) {}
+    fn evaluate_wildcards(&mut self) {
+        for (_, team_ids) in self.conference_mapping.iter() {
+            let mut team_ids_without_division_winners = team_ids.clone();
+
+            team_ids_without_division_winners.retain(|team_id| {
+                !self
+                    .current_simulation_result
+                    .division_winners
+                    .contains(team_id)
+            });
+
+            let mut team_pool: TeamPool = TeamPool::new(team_ids.clone(), PoolType::Wildcard, self);
+            team_pool.evaluate();
+            for team_id in team_pool.ranking.unwrap() {
+                self.current_simulation_result
+                    .wildcard_teams
+                    .insert(team_id);
+            }
+        }
+    }
 
     fn increment_overall_results(&mut self) {
         let simulation_game = self.current_simulation_game.as_ref().unwrap();
@@ -699,6 +892,19 @@ impl Season {
             match self.overall_results.get_mut(&lookup) {
                 Some(result) => {
                     result.division_winner += 1;
+                }
+                None => panic!("Overall results not initialized properly"),
+            }
+        }
+        for team_id in current_result.wildcard_teams.iter() {
+            let lookup = SimulationResultLookup {
+                game_id: simulation_game.0.clone(),
+                game_result: simulation_game.1.clone(),
+                team_id: team_id.clone(),
+            };
+            match self.overall_results.get_mut(&lookup) {
+                Some(result) => {
+                    result.wildcard_team += 1;
                 }
                 None => panic!("Overall results not initialized properly"),
             }
@@ -826,6 +1032,7 @@ impl Season {
             let simulation_team_id = lookup.team_id;
             let mut results: HashMap<String, i32> = HashMap::new();
             results.insert(String::from("division winner"), result.division_winner);
+            results.insert(String::from("wildcard team"), result.wildcard_team);
 
             for (season_outcome, simulations_with_outcome) in results.iter() {
                 let new_row: String = format!(
