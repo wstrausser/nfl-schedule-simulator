@@ -870,7 +870,11 @@ impl Season {
                     .contains(team_id)
             });
 
-            let mut team_pool: TeamPool = TeamPool::new(team_ids.clone(), PoolType::Wildcard, self);
+            let mut team_pool: TeamPool = TeamPool::new(
+                team_ids_without_division_winners.clone(),
+                PoolType::Wildcard,
+                self,
+            );
             team_pool.evaluate();
             for team_id in team_pool.ranking.unwrap() {
                 self.current_simulation_result
