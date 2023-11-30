@@ -163,8 +163,8 @@ impl CurrentSimulationResult {
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct SimulationResultLookup {
-    pub game_id: i32,
-    pub game_result: GameResult,
+    pub game_id: Option<i32>,
+    pub game_result: Option<GameResult>,
     pub team_id: i32,
 }
 
@@ -653,8 +653,12 @@ impl Season {
         season
     }
 
-    pub fn run_all_game_simulations(&mut self, sims: u64) {
+    pub fn run_all_game_simulations(&mut self, sims: u64, include_decided: bool) {
         self.set_simulation_id(sims.clone());
+
+        println!("\n{} - Simulating current season state...", now(),);
+        self.simulate_current_state(sims);
+
         let games = self.actual_games.clone();
         let total_games = games.len();
         let mut i: u32 = 1;
@@ -668,21 +672,43 @@ impl Season {
             );
             i += 1;
             let actual_game: Game = self.actual_games.get(game_id).unwrap().clone();
+
+            let mut simulate_scenarios = || {
+                println!("{} - Simulating home win...", now());
+                self.simulate_for_game(game_id.clone(), GameResult::HomeWin, sims);
+
+                println!("{} - Simulating away win...", now());
+                self.simulate_for_game(game_id.clone(), GameResult::AwayWin, sims);
+
+                println!("{} - Simulating tie...", now());
+                self.simulate_for_game(game_id.clone(), GameResult::Tie, sims);
+            };
             match actual_game.game_result {
-                Some(_) => {}
+                Some(_) => match include_decided {
+                    true => simulate_scenarios(),
+                    false => {}
+                },
                 None => {
-                    println!("{} - Simulating home win...", now());
-                    self.simulate_for_game(game_id.clone(), GameResult::HomeWin, sims);
-
-                    println!("{} - Simulating away win...", now());
-                    self.simulate_for_game(game_id.clone(), GameResult::AwayWin, sims);
-
-                    println!("{} - Simulating tie...", now());
-                    self.simulate_for_game(game_id.clone(), GameResult::Tie, sims);
+                    simulate_scenarios();
                 }
             }
         }
         self.insert_results();
+    }
+
+    pub fn simulate_current_state(&mut self, sims: u64) {
+        for (team_id, _) in self.teams.iter() {
+            let new_lookup = SimulationResultLookup {
+                game_id: None,
+                game_result: None,
+                team_id: team_id.clone(),
+            };
+            self.overall_results
+                .insert(new_lookup, TeamSimulationResults::new());
+        }
+        for _ in 0..sims {
+            self.run_simulation(true);
+        }
     }
 
     pub fn simulate_for_game(&mut self, game_id: i32, game_result: GameResult, sims: u64) {
@@ -695,8 +721,8 @@ impl Season {
 
         for (team_id, _) in self.teams.iter() {
             let new_lookup = SimulationResultLookup {
-                game_id: game_id.clone(),
-                game_result: game_result.clone(),
+                game_id: Some(game_id.clone()),
+                game_result: Some(game_result.clone()),
                 team_id: team_id.clone(),
             };
             self.overall_results
@@ -885,13 +911,20 @@ impl Season {
     }
 
     fn increment_overall_results(&mut self) {
-        let simulation_game = self.current_simulation_game.as_ref().unwrap();
+        let simulation_game: Option<&(i32, GameResult)> = self.current_simulation_game.as_ref();
         let current_result = &self.current_simulation_result;
         for team_id in current_result.division_winners.iter() {
-            let lookup = SimulationResultLookup {
-                game_id: simulation_game.0.clone(),
-                game_result: simulation_game.1.clone(),
-                team_id: team_id.clone(),
+            let lookup = match simulation_game {
+                Some(sg) => SimulationResultLookup {
+                    game_id: Some(sg.0.clone()),
+                    game_result: Some(sg.1.clone()),
+                    team_id: team_id.clone(),
+                },
+                None => SimulationResultLookup {
+                    game_id: None,
+                    game_result: None,
+                    team_id: team_id.clone(),
+                },
             };
             match self.overall_results.get_mut(&lookup) {
                 Some(result) => {
@@ -901,10 +934,17 @@ impl Season {
             }
         }
         for team_id in current_result.wildcard_teams.iter() {
-            let lookup = SimulationResultLookup {
-                game_id: simulation_game.0.clone(),
-                game_result: simulation_game.1.clone(),
-                team_id: team_id.clone(),
+            let lookup = match simulation_game {
+                Some(sg) => SimulationResultLookup {
+                    game_id: Some(sg.0.clone()),
+                    game_result: Some(sg.1.clone()),
+                    team_id: team_id.clone(),
+                },
+                None => SimulationResultLookup {
+                    game_id: None,
+                    game_result: None,
+                    team_id: team_id.clone(),
+                },
             };
             match self.overall_results.get_mut(&lookup) {
                 Some(result) => {
@@ -1000,10 +1040,11 @@ impl Season {
                 VALUES (
                     DEFAULT,
                     NOW(),
+                    {},
                     {}
                 )
             ",
-            sims,
+            self.season_year, sims,
         );
         execute(statement);
 
@@ -1027,11 +1068,17 @@ impl Season {
         let mut new_rows: Vec<String> = Vec::new();
         for (lookup, result) in self.overall_results.iter() {
             let simulation_id = self.simulation_id.unwrap();
-            let game_id = lookup.game_id;
-            let simulated_game_result = match lookup.game_result {
-                GameResult::HomeWin => String::from("home win"),
-                GameResult::AwayWin => String::from("away win"),
-                GameResult::Tie => String::from("tie"),
+            let game_id: String = match lookup.game_id {
+                Some(gid) => format!("{gid}"),
+                None => String::from("NULL"),
+            };
+            let simulated_game_result = match &lookup.game_result {
+                Some(gr) => match gr {
+                    GameResult::HomeWin => String::from("'home win'"),
+                    GameResult::AwayWin => String::from("'away win'"),
+                    GameResult::Tie => String::from("'tie'"),
+                },
+                None => String::from("NULL"),
             };
             let simulation_team_id = lookup.team_id;
             let mut results: HashMap<String, i32> = HashMap::new();
@@ -1040,7 +1087,7 @@ impl Season {
 
             for (season_outcome, simulations_with_outcome) in results.iter() {
                 let new_row: String = format!(
-                    "(DEFAULT,{simulation_id},{game_id},'{simulated_game_result}',{simulation_team_id},'{season_outcome}',{simulations_with_outcome})",
+                    "(DEFAULT,{simulation_id},{game_id},{simulated_game_result},{simulation_team_id},'{season_outcome}',{simulations_with_outcome})",
                 );
                 new_rows.push(new_row);
             }
