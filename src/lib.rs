@@ -146,7 +146,7 @@ pub struct CurrentSimulationResult {
     pub playoff_seeding: HashMap<u8, HashSet<i32>>,
     pub division_winners: HashSet<i32>,
     pub wildcard_teams: HashSet<i32>,
-    pub draft_order: Vec<i32>,
+    pub draft_order: HashMap<u8, i32>,
 }
 
 impl CurrentSimulationResult {
@@ -156,7 +156,7 @@ impl CurrentSimulationResult {
             playoff_seeding: HashMap::new(),
             division_winners: HashSet::new(),
             wildcard_teams: HashSet::new(),
-            draft_order: Vec::new(),
+            draft_order: HashMap::new(),
         };
 
         for i in 1..8 {
@@ -200,7 +200,7 @@ pub struct TeamSimulationResults {
     pub playoff_seedings: HashMap<u8, i32>,
     pub division_winner: i32,
     pub wildcard_team: i32,
-    pub draft_picks: Vec<i32>,
+    pub draft_positions: HashMap<u8, i32>,
 }
 
 impl TeamSimulationResults {
@@ -210,11 +210,14 @@ impl TeamSimulationResults {
             playoff_seedings: HashMap::new(),
             division_winner: 0,
             wildcard_team: 0,
-            draft_picks: Vec::new(),
+            draft_positions: HashMap::new(),
         };
 
         for i in 1..8 {
             results.playoff_seedings.insert(i, 0);
+        }
+        for i in 1..19 {
+            results.draft_positions.insert(i, 0);
         }
 
         results
@@ -308,6 +311,7 @@ impl TeamPool {
             self.break_by_percent("conference");
             self.break_by_common_games(4);
             self.break_by_strength_of_victory();
+            self.break_by_strength_of_schedule();
             self.break_by_random();
 
             let top_team = self.tied_teams.iter().next().unwrap().clone();
@@ -320,7 +324,21 @@ impl TeamPool {
     }
 
     fn evaluate_draft_order(&mut self) {
-        todo!()
+        self.ranking = Some(Vec::new());
+        for _ in 0..18 {
+            self.break_by_percent("overall");
+            self.break_by_strength_of_schedule();
+            self.break_by_random();
+
+            let top_team = self.tied_teams.iter().next().unwrap().clone();
+            self.ranking.as_mut().unwrap().push(top_team);
+            self.tied_teams = self.teams.clone();
+            for team_id in self.ranking.as_ref().unwrap() {
+                self.tied_teams.remove(team_id);
+            }
+        }
+
+        self.ranking.as_mut().unwrap().reverse();
     }
 
     fn evaluate_division_winner_seeding(&mut self) {
@@ -669,9 +687,9 @@ impl TeamPool {
     fn break_by_strength_of_victory(&mut self) {
         match self.tied_teams.len() {
             tt if tt > 1 => {
-                let mut defeated_teams: HashMap<i32, HashSet<i32>> = HashMap::new();
+                let mut defeated_teams: HashMap<i32, Vec<i32>> = HashMap::new();
                 for team_id in self.tied_teams.iter() {
-                    defeated_teams.insert(team_id.clone(), HashSet::new());
+                    defeated_teams.insert(team_id.clone(), Vec::new());
                 }
                 for (_, game) in self.games.iter() {
                     let home_team = &game.home_team.team_id;
@@ -682,7 +700,7 @@ impl TeamPool {
                         defeated_teams
                             .get_mut(home_team)
                             .unwrap()
-                            .insert(away_team.clone());
+                            .push(away_team.clone());
                     }
                     if self.tied_teams.contains(away_team)
                         && game.game_result.as_ref().unwrap() == &GameResult::AwayWin
@@ -690,7 +708,7 @@ impl TeamPool {
                         defeated_teams
                             .get_mut(away_team)
                             .unwrap()
-                            .insert(home_team.clone());
+                            .push(home_team.clone());
                     }
                 }
 
@@ -734,9 +752,9 @@ impl TeamPool {
     fn break_by_strength_of_schedule(&mut self) {
         match self.tied_teams.len() {
             tt if tt > 1 => {
-                let mut opponents: HashMap<i32, HashSet<i32>> = HashMap::new();
+                let mut opponents: HashMap<i32, Vec<i32>> = HashMap::new();
                 for team_id in self.tied_teams.iter() {
-                    opponents.insert(team_id.clone(), HashSet::new());
+                    opponents.insert(team_id.clone(), Vec::new());
                 }
                 for (_, game) in self.games.iter() {
                     let home_team = &game.home_team.team_id;
@@ -745,13 +763,13 @@ impl TeamPool {
                         opponents
                             .get_mut(home_team)
                             .unwrap()
-                            .insert(away_team.clone());
+                            .push(away_team.clone());
                     }
                     if self.tied_teams.contains(away_team) {
                         opponents
                             .get_mut(away_team)
                             .unwrap()
-                            .insert(home_team.clone());
+                            .push(home_team.clone());
                     }
                 }
 
@@ -948,6 +966,7 @@ impl Season {
         self.evaluate_divisions();
         self.evaluate_division_winner_playoff_seedings();
         self.evaluate_wildcards();
+        self.evaluate_draft_order();
         match increment {
             true => self.increment_overall_results(),
             false => {}
@@ -1143,6 +1162,22 @@ impl Season {
         }
     }
 
+    fn evaluate_draft_order(&mut self) {
+        let mut team_pool: TeamPool = TeamPool::new(
+            self.teams.keys().cloned().collect(),
+            PoolType::DraftOrder,
+            self,
+        );
+        team_pool.evaluate();
+        let mut draft_position = 1;
+        for team_id in team_pool.ranking.unwrap() {
+            self.current_simulation_result
+                .draft_order
+                .insert(draft_position, team_id);
+            draft_position += 1;
+        }
+    }
+
     fn increment_overall_results(&mut self) {
         let simulation_game: Option<&(i32, GameResult)> = self.current_simulation_game.as_ref();
         let current_result = &self.current_simulation_result;
@@ -1176,6 +1211,18 @@ impl Season {
                     }
                     None => panic!("Overall results not initialized properly"),
                 }
+            }
+        }
+        for (draft_position, team_id) in current_result.draft_order.iter() {
+            let lookup = SimulationResultLookup::new(team_id, simulation_game);
+            match self.overall_results.get_mut(&lookup) {
+                Some(result) => {
+                    result.draft_positions.insert(
+                        draft_position.clone(),
+                        result.draft_positions.get(draft_position).unwrap() + 1,
+                    );
+                }
+                None => panic!("Overall results not initialized properly"),
             }
         }
     }
@@ -1289,7 +1336,7 @@ impl Season {
 
     fn insert_results(&self) {
         // Insert all results in self.overall_results into database
-        println!("Inserting results...");
+        println!("\n{} - Inserting results...", now(),);
         let mut new_rows: Vec<String> = Vec::new();
         for (lookup, result) in self.overall_results.iter() {
             let simulation_id = self.simulation_id.unwrap();
@@ -1312,6 +1359,12 @@ impl Season {
             for (seed_number, occurences) in result.playoff_seedings.iter() {
                 results.insert(format!("playoff seed {seed_number}"), occurences.clone());
             }
+            for (draft_position, occurences) in result.draft_positions.iter() {
+                results.insert(
+                    format!("draft position {draft_position}"),
+                    occurences.clone(),
+                );
+            }
 
             for (season_outcome, simulations_with_outcome) in results.iter() {
                 let new_row: String = format!(
@@ -1326,6 +1379,7 @@ impl Season {
             new_rows.join(","),
         );
         execute(statement);
+        println!("\n{} - Finished", now(),);
     }
 }
 
