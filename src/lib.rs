@@ -1163,11 +1163,15 @@ impl Season {
     }
 
     fn evaluate_draft_order(&mut self) {
-        let mut team_pool: TeamPool = TeamPool::new(
-            self.teams.keys().cloned().collect(),
-            PoolType::DraftOrder,
-            self,
-        );
+        let mut teams: HashSet<i32> = self.teams.keys().cloned().collect();
+        for (_, teams_set) in self.current_simulation_result.playoff_seeding.iter() {
+            for team_id in teams_set.iter() {
+                teams.remove(team_id);
+            }
+        }
+
+        let mut team_pool: TeamPool =
+            TeamPool::new(Vec::from_iter(teams), PoolType::DraftOrder, self);
         team_pool.evaluate();
         let mut draft_position = 1;
         for team_id in team_pool.ranking.unwrap() {
@@ -1353,22 +1357,23 @@ impl Season {
                 None => String::from("NULL"),
             };
             let simulation_team_id = lookup.team_id;
-            let mut results: HashMap<String, i32> = HashMap::new();
-            // results.insert(String::from("division winner"), result.division_winner);
-            // results.insert(String::from("wildcard team"), result.wildcard_team);
+            let mut results: HashMap<(String, u8), i32> = HashMap::new();
             for (seed_number, occurences) in result.playoff_seedings.iter() {
-                results.insert(format!("playoff seed {seed_number}"), occurences.clone());
+                results.insert(
+                    (String::from("playoff seed"), seed_number.clone()),
+                    occurences.clone(),
+                );
             }
             for (draft_position, occurences) in result.draft_positions.iter() {
                 results.insert(
-                    format!("draft position {draft_position}"),
+                    (String::from("draft position"), draft_position.clone()),
                     occurences.clone(),
                 );
             }
 
-            for (season_outcome, simulations_with_outcome) in results.iter() {
+            for ((result_set, team_rank), simulations_with_rank) in results.iter() {
                 let new_row: String = format!(
-                    "(DEFAULT,{simulation_id},{game_id},{simulated_game_result},{simulation_team_id},'{season_outcome}',{simulations_with_outcome})",
+                    "(DEFAULT,{simulation_id},{game_id},{simulated_game_result},{simulation_team_id},'{result_set}',{team_rank},{simulations_with_rank})",
                 );
                 new_rows.push(new_row);
             }

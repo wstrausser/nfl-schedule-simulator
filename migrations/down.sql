@@ -1,11 +1,11 @@
-DROP VIEW current_state;
+DROP VIEW nfl.game_simulations_readable;
 
-DROP VIEW nfl.wildcard_teams;
-
-DROP VIEW nfl.division_winners;
+DROP VIEW nfl.current_state;
 
 DROP TABLE nfl.simulation_results;
 
 DROP TABLE nfl.simulations;
+
+DROP TYPE nfl.resultset;
 
 DROP TYPE nfl.gameresult;
