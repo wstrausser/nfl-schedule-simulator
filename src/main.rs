@@ -7,10 +7,13 @@ use std::time::Instant;
 fn main() {
     // migrations::rebuild();
     // migrations::destroy();
-    let season_year: i32 = 2023;
+    let season_year: i32 = 2021;
     let mut season: Season = Season::new_from_year(season_year);
 
-    season.run_all_game_simulations(10000, true);
+    // season.simulate_current_state(1);
+    // println!("{:#?}", season.current_simulation_result.playoff_seeding);
+
+    season.run_all_game_simulations(10, true);
 
     // season.set_simulation_id(1000);
 
