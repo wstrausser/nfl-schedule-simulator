@@ -2,7 +2,7 @@ CREATE TYPE nfl.gameresult AS ENUM ('home win', 'away win', 'tie');
 
 CREATE TYPE nfl.resultset AS ENUM ('playoff seed', 'draft position');
 
-CREATE TABLE nfl.simulations (
+CREATE TABLE IF NOT EXISTS nfl.simulations (
     simulation_id serial4 NOT NULL,
     simulation_timestamp timestamptz NOT NULL DEFAULT NOW(),
 	season int4 NOT NULL,
@@ -10,7 +10,7 @@ CREATE TABLE nfl.simulations (
     CONSTRAINT simulations_pkey PRIMARY KEY (simulation_id)
 );
 
-CREATE TABLE nfl.simulation_results (
+CREATE TABLE IF NOT EXISTS nfl.simulation_results (
     simulation_result_id bigserial NOT NULL,
     simulation_id int4 NOT NULL,
     game_id int4,
@@ -25,103 +25,129 @@ CREATE TABLE nfl.simulation_results (
     CONSTRAINT simulation_results_simulation_team_id_fkey FOREIGN KEY (simulation_team_id) REFERENCES nfl.teams(team_id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
-CREATE VIEW nfl.current_state 
+CREATE VIEW nfl.simulation_results_readable 
 AS 
-	WITH
-		cte AS (
-			SELECT
-				s.simulation_timestamp,
-				t.abbreviation AS simulation_team,
-				sr.result_set,
-				sr.team_rank,
-				sr.simulations_with_rank,
-				s.simulations_per_game_result AS total_simulations
-			FROM nfl.simulation_results sr 
-			LEFT JOIN nfl.simulations s 
-			USING (simulation_id)
-			LEFT JOIN nfl.teams t
-			ON sr.simulation_team_id=t.team_id
-			WHERE
-				game_id IS NULL
-				AND simulation_id = (
-					SELECT MAX(simulation_id)
-					FROM nfl.simulations
-				)
-		)
-		SELECT
-			*,
-			CAST(simulations_with_rank AS float4) / total_simulations AS probability
-		FROM cte
-		ORDER BY simulation_team, result_set, team_rank;
-
-CREATE VIEW nfl.game_simulations_readable 
-AS
 	WITH
 		cte1 AS (
 			SELECT
-				s.simulation_timestamp,
-				t.abbreviation AS simulation_team,
-				sr.game_id,
-				sr.simulated_game_result,
-				sr.result_set,
-				sr.team_rank,
-				sr.simulations_with_rank,
-				s.simulations_per_game_result AS total_simulations
-			FROM nfl.simulation_results sr 
-			LEFT JOIN nfl.simulations s 
+				s.simulation_id AS simulation_id,
+				s.simulation_timestamp AS simulation_timestamp,
+				t3.abbreviation AS simulation_team,
+				g.week,
+				g.api_game_id AS api_game_id,
+				t1.abbreviation AS home_team,
+				t2.abbreviation AS away_team,
+				sr.simulated_game_result AS simulated_game_result,
+				sr.result_set AS result_set,
+				sr.team_rank AS team_rank,
+				sr.simulations_with_rank AS simulations_with_rank,
+				s.simulations_per_game_result AS simulations_run
+			FROM nfl.simulation_results sr
+			LEFT JOIN nfl.simulations s
 			USING (simulation_id)
-			LEFT JOIN nfl.teams t
-			ON sr.simulation_team_id=t.team_id
+			LEFT JOIN nfl.games g
+			USING (game_id)
+			LEFT JOIN nfl.teams t1
+			ON g.home_team_id = t1.team_id
+			LEFT JOIN nfl.teams t2
+			ON g.away_team_id = t2.team_id
+			LEFT JOIN nfl.teams t3
+			ON sr.simulation_team_id = t3.team_id
 			WHERE
-				game_id IS NOT NULL
-				AND simulation_id = (
-					SELECT MAX(simulation_id)
-					FROM nfl.simulations
-				)
+				g.api_game_id IS NOT NULL
+				AND g.game_type = 'REG'
 		),
 		cte2 AS (
 			SELECT
-				g.game_id,
-				g.api_game_id,
-				g.season,
-				g.week,
-				t1.abbreviation AS home_team,
-				t2.abbreviation AS away_team,
-				g.home_score,
-				g.away_score
-			FROM nfl.games g
-			LEFT JOIN nfl.teams t1 
-			ON g.home_team_id = t1.team_id
-			LEFT JOIN nfl.teams t2 
-			ON g.away_team_id = t2.team_id
-		)
+				*,
+				CASE 
+					WHEN result_set = 'playoff seed' AND team_rank <= 4 THEN 'division winner'
+					WHEN result_set = 'playoff seed' AND team_rank >= 5 THEN 'wildcard team'
+					WHEN result_set = 'draft position' AND team_rank = 1 THEN 'first pick'
+					ELSE NULL
+				END AS result_condition,
+				CAST(simulations_with_rank AS float) / CAST(simulations_run AS float) AS probability
+			FROM cte1
+		),
+		cte3 AS (
+			SELECT
+				*,
+				CASE
+					WHEN result_set = 'playoff seed' AND team_rank <= 7 THEN 'playoff team'
+					WHEN result_set = 'draft position' AND team_rank <= 5 THEN 'top 5 pick'
+					ELSE NULL
+				END AS result_condition,
+				CAST(simulations_with_rank AS float) / CAST(simulations_run AS float) AS probability
+			FROM cte1
+		),
+		cte4 AS (
+			SELECT
+				*,
+				CASE
+					WHEN result_set = 'draft position' AND team_rank <= 10 THEN 'top 10 pick'
+					ELSE NULL
+				END AS result_condition,
+				CAST(simulations_with_rank AS float) / CAST(simulations_run AS float) AS probability
+			FROM cte1
+		),
+		cte5 AS (
+			SELECT *
+			FROM cte2
+			UNION (
+				SELECT *
+				FROM cte3
+			)
+			UNION (
+				SELECT *
+				FROM cte4
+			)
+		),
+		cte6 AS (
+			SELECT
+				simulation_id,
+				simulation_timestamp,
+				simulation_team,
+				week,
+				api_game_id,
+				home_team,
+				away_team,
+				result_condition,
+				SUM(
+					CASE
+						WHEN simulated_game_result = 'home win' THEN probability
+						ELSE 0
+					END
+				) AS home_win,
+				SUM(
+					CASE
+						WHEN simulated_game_result = 'tie' THEN probability
+						ELSE 0
+					END
+				) AS tie,
+				SUM(
+					CASE
+						WHEN simulated_game_result = 'away win' THEN probability
+						ELSE 0
+					END
+				) AS away_win
+			FROM cte5
+			WHERE result_condition IS NOT NULL
+			GROUP BY
+				simulation_id,
+				simulation_timestamp,
+				simulation_team,
+				week,
+				api_game_id,
+				home_team,
+				away_team,
+				result_condition
+		),
+		cte7 AS (
 		SELECT
-			c1.simulation_timestamp,
-			c2.api_game_id,
-			c2.season,
-			c2.week,
-			CASE
-				WHEN c1.simulated_game_result = 'home win' THEN c2.home_team
-				WHEN c1.simulated_game_result = 'away win' THEN c2.away_team
-				WHEN c1.simulated_game_result = 'tie' THEN 'tie'
-			END AS winner,
-			CASE
-				WHEN c1.simulated_game_result = 'home win' THEN c2.away_team
-				WHEN c1.simulated_game_result = 'away win' THEN c2.home_team
-				WHEN c1.simulated_game_result = 'tie' THEN 'tie'
-			END AS loser,
-			c1.simulation_team,
-			c1.result_set,
-			c1.team_rank,
-			c1.simulations_with_rank,
-			c1.total_simulations,
-			CAST (c1.simulations_with_rank AS float4) / c1.total_simulations AS probability		
-		FROM cte1 c1
-		LEFT JOIN cte2 c2
-		USING (game_id)
-		ORDER BY
-			simulation_team,
-			api_game_id,
-			result_set,
-			team_rank,
-			winner;
+			*,
+			ABS(home_win - away_win) AS difference
+		FROM cte6
+		)
+
+	SELECT *
+	FROM cte7;

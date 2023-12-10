@@ -1,6 +1,4 @@
-DROP VIEW nfl.game_simulations_readable;
-
-DROP VIEW nfl.current_state;
+DROP VIEW nfl.simulation_results_readable;
 
 DROP TABLE nfl.simulation_results;
 
